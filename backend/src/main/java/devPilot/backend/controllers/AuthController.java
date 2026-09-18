@@ -11,6 +11,7 @@ import devPilot.backend.dto.UserResponse;
 import devPilot.backend.entity.User;
 import devPilot.backend.security.AppUserPrincipal;
 import devPilot.backend.security.CurrentUser;
+import devPilot.backend.services.UserService;
 import lombok.RequiredArgsConstructor;
 
 
@@ -20,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AuthController {
     private final CurrentUser currentUser;
+    private final UserService userService;
 
     @GetMapping("/login-url")
     public Map<String, String> loginUrl() {
@@ -30,7 +32,9 @@ public class AuthController {
     @GetMapping("/me")
     public ResponseEntity<UserResponse> me() {
         AppUserPrincipal principal = currentUser.require();
-        User user = principal.getUser();
+        // Fresh read: the session principal holds the login-time snapshot,
+        // which predates key saves and provider switches.
+        User user = userService.requiredById(principal.getId());
         boolean keySet = user.getOpenaiApiKey() != null && !user.getOpenaiApiKey().isBlank();
         String provider = user.getAiProvider() != null
                 ? user.getAiProvider().toLowerCase()
