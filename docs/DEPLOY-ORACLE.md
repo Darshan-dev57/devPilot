@@ -76,28 +76,21 @@ Edit `.env`:
 No OpenAI key needed on the server: every user adds their own in
 Settings → OpenAI API key (stored encrypted, billed to them).
 
-### Using a free Gemini key instead of OpenAI
+### Users pick OpenAI or Gemini themselves
 
-Confirmed working end-to-end. Set these server properties (or env equivalents)
-so the per-user factory talks to Gemini's OpenAI-compatible endpoint:
-
-```properties
-app.ai.base-url=https://generativelanguage.googleapis.com/v1beta/openai/
-app.ai.chat-model=gemini-3.8-flash
-app.ai.embedding-model=gemini-embedding-001
-app.ai.embedding-dimensions=768
-spring.ai.vectorstore.pgvector.dimensions=768
-```
+No server AI configuration needed: every user chooses a provider in
+Settings → AI provider key and pastes their own key (stored encrypted, billed
+to them). OpenAI and Gemini each keep a separate vector table, and switching
+provider resets that user's repos to unindexed for re-indexing.
 
 Notes:
-- Model names retire fast on Gemini's side — if chat fails with
-  "model ... is no longer available", list current ones with:
+- Gemini model names retire fast — if chat fails with "model ... is no longer
+  available", list current ones with:
   `curl https://generativelanguage.googleapis.com/v1beta/openai/models -H "Authorization: Bearer KEY"`
-  and pick the newest `gemini-*-flash`.
-- `gemini-embedding-001` needs the native API path (already built into
-  `GeminiEmbeddingModel`) and 768 dimensions.
-- Changing embedding model/dimensions later requires a fresh `vector_store`
-  table (`DROP TABLE vector_store;` — it is recreated automatically).
+  and update `app.ai.gemini.chat-model` (default `gemini-3.8-flash`).
+- Changing embedding model/dimensions later requires a fresh vector table
+  (`DROP TABLE vector_store_openai;` / `vector_store_gemini;` — recreated
+  automatically).
 
 ## 5. Launch
 

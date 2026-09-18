@@ -2,9 +2,9 @@
 
 DevPilot is a GitHub-connected AI code assistant. Connect your GitHub account, pick a repository, index its code, and chat with it — answers stream back with file citations.
 
-**Bring your own key:** each user adds their own OpenAI API key once in
-Settings → OpenAI API key (stored encrypted, billed to them). The server operator
-needs no OpenAI key, so the site can serve any number of users at zero AI cost.
+**Bring your own key:** each user picks OpenAI or Gemini once in
+Settings → AI provider key (stored encrypted, billed to them). The server operator
+needs no AI key, so the site can serve any number of users at zero AI cost.
 
 ## Deploy as a website
 
@@ -99,8 +99,8 @@ spring.ai.openai.api-key=sk-your-openai-key
 ```
 
 > The server key is only a fallback placeholder. In normal use every user saves
-> their own key in the app (Settings → OpenAI API key), which the backend
-> encrypts and uses per-request for that user's indexing and chat.
+> their own key in the app (Settings → AI provider key, OpenAI or Gemini), which
+> the backend encrypts and uses per-request for that user's indexing and chat.
 
 ### 3. Run the backend
 
