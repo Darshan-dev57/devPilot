@@ -8,11 +8,13 @@ needs no OpenAI key, so the site can serve any number of users at zero AI cost.
 
 ## Deploy as a website
 
-The repo ships production Docker images, a full `docker-compose.prod.yml`
-(postgres + backend + frontend + Caddy with automatic TLS), and a step-by-step
-guide for a free Oracle Cloud Ampere ARM VM:
+Two guides, pick one:
 
-➡️ **[docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md)**
+- ➡️ **[docs/DEPLOY-FREE.md](docs/DEPLOY-FREE.md)** — ₹0, no credit card:
+  Neon (DB) + Render (backend) + Vercel (frontend). Best starting point.
+- ➡️ **[docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md)** — free Oracle Ampere ARM
+  VM with everything in one `docker-compose.prod.yml` (needs a card for
+  verification, serves unlimited users at full speed).
 
 Short version: fill 4 values in `.env` (domain, GitHub OAuth id/secret, DB password,
 encryptor secrets) and run `docker compose -f docker-compose.prod.yml up -d --build`.
