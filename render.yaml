@@ -6,6 +6,7 @@ services:
     name: devpilot-backend
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     plan: free
     healthCheckPath: /actuator/health
     autoDeploy: true
