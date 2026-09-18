@@ -5,6 +5,8 @@ WORKDIR /app
 # For split hosting, pass e.g. --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.example.com
 ARG NEXT_PUBLIC_API_BASE_URL=""
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+# Enable Next.js standalone output (see next.config.ts).
+ENV DOCKER_BUILD=1
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . ./

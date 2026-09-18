@@ -1,0 +1,49 @@
+# Render blueprint for DevPilot backend (free tier, no card required).
+# Frontend goes on Vercel, database on Neon — see docs/DEPLOY-FREE.md.
+# Deploy: Render Dashboard -> New -> Blueprint -> select this repo.
+services:
+  - type: web
+    name: devpilot-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      # Render routes public traffic to $PORT (10000). Must match server.port.
+      - key: SERVER_PORT
+        value: 10000
+      # Free instances have 512 MB RAM: keep the heap small.
+      - key: JAVA_TOOL_OPTIONS
+        value: "-Xmx320m -XX:MaxMetaspaceSize=160m"
+      - key: SPRING_DATASOURCE_URL
+        sync: false # paste Neon connection string (jdbc:postgresql://...?sslmode=require)
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      # Neon sleeps idle computes: recycle pooled connections aggressively.
+      - key: SPRING_DATASOURCE_HIKARI_MAX_LIFETIME
+        value: 300000
+      - key: SPRING_DATASOURCE_HIKARI_KEEPALIVE_TIME
+        value: 60000
+      - key: SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: update
+      - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID
+        sync: false
+      - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET
+        sync: false
+      - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_SCOPE
+        value: read:user,repo
+      # Fill after Vercel deploy, e.g. https://devpilot.vercel.app
+      - key: APP_FRONTEND_URL
+        sync: false
+      - key: APP_CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: APP_TOKEN_ENCRYPTOR_PASSWORD
+        sync: false # generate: openssl rand -hex 32
+      - key: APP_TOKEN_ENCRYPTOR_SALT
+        sync: false # generate: openssl rand -hex 8
+      # Placeholder on purpose: every user brings their own key in Settings.
+      - key: SPRING_AI_OPENAI_API_KEY
+        value: sk-byok-mode-placeholder

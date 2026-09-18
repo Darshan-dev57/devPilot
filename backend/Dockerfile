@@ -16,4 +16,6 @@ COPY --from=build /app/target/backend-*.jar app.jar
 RUN chown appuser:appgroup app.jar
 USER appuser
 EXPOSE 8080
+# Render/Oracle pass their port via SERVER_PORT (Spring maps it to server.port).
+ENV SERVER_PORT=8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
