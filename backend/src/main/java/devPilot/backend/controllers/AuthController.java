@@ -36,7 +36,8 @@ public class AuthController {
                 user.getGithubId(),
                 user.getGithubUsername(),
                 user.getDisplayName(),
-                user.getAvatarUrl()));
+                user.getAvatarUrl(),
+                user.getOpenaiApiKey() != null && !user.getOpenaiApiKey().isBlank()));
     }
     
 }

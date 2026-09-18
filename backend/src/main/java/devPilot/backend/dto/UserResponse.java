@@ -7,7 +7,8 @@ public record UserResponse(
     Long githubId,
     String githubUsername,
     String displayName,
-    String avatarUrl
+    String avatarUrl,
+    boolean openaiKeySet
 ) {
 
   

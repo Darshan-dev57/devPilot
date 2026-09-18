@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import devPilot.backend.entity.User;
 import devPilot.backend.repository.UserRepository;
 
+import devPilot.backend.services.ai.AiModelFactory;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -17,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 public class UserService {
     public final UserRepository userRepository;
     public final TextEncryptor tokenEncryptor;
+    private final AiModelFactory aiModelFactory;
     
    @Transactional
     public User upsertFromGitHub(Map<String, Object> attributes, String accessToken, String scopes) {
@@ -47,6 +49,33 @@ public class UserService {
 
     public String decryptAccessToken(User user) {
         return tokenEncryptor.decrypt(user.getAccessToken());
+    }
+
+    @Transactional
+    public void saveOpenAiKey(UUID id, String rawKey) {
+        User user = requiredById(id);
+        user.setOpenaiApiKey(tokenEncryptor.encrypt(rawKey));
+        user.setOpenaiKeyUpdatedAt(java.time.Instant.now());
+        userRepository.save(user);
+        aiModelFactory.evict(id);
+    }
+
+    @Transactional
+    public void removeOpenAiKey(UUID id) {
+        User user = requiredById(id);
+        user.setOpenaiApiKey(null);
+        user.setOpenaiKeyUpdatedAt(null);
+        userRepository.save(user);
+        aiModelFactory.evict(id);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasOpenAiKey(User user) {
+        return user.getOpenaiApiKey() != null && !user.getOpenaiApiKey().isBlank();
+    }
+
+    public String decryptOpenAiKey(User user) {
+        return tokenEncryptor.decrypt(user.getOpenaiApiKey());
     }
 
     private static Long toLong(Object value) {

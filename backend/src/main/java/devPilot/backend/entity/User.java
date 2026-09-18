@@ -47,6 +47,12 @@ public class User {
     @Column(name = "token_scopes", length = 500)
     private String tokenScopes;
 
+    @Column(name = "openai_api_key", columnDefinition = "TEXT")
+    private String openaiApiKey;
+
+    @Column(name = "openai_key_updated_at")
+    private Instant openaiKeyUpdatedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
