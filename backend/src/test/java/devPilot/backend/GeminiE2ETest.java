@@ -39,6 +39,7 @@ import devPilot.backend.security.AppUserPrincipal;
 import devPilot.backend.services.UserService;
 import devPilot.backend.services.ai.AiKeyResolver;
 import devPilot.backend.services.ai.AiModelFactory;
+import devPilot.backend.services.ai.AiProvider;
 import devPilot.backend.services.ai.CodeContextRetriever;
 import devPilot.backend.services.ai.RagSettings;
 
@@ -80,9 +81,12 @@ class GeminiE2ETest {
                 .accessToken("dummy")
                 .build());
         userId = user.getId();
-        userService.saveOpenAiKey(userId, apiKey);
-        assertTrue(userService.hasOpenAiKey(userService.requiredById(userId)));
-        assertEquals(apiKey, aiKeyResolver.requireDecryptedKey(userId));
+        userService.saveAiKey(userId, AiProvider.GEMINI, apiKey);
+        assertTrue(userService.hasAiKey(userService.requiredById(userId)));
+        assertEquals(AiProvider.GEMINI, userService.providerOf(userService.requiredById(userId)));
+        var resolved = aiKeyResolver.requireKey(userId);
+        assertEquals(AiProvider.GEMINI, resolved.provider());
+        assertEquals(apiKey, resolved.apiKey());
 
         var auth = new UsernamePasswordAuthenticationToken(
                 new AppUserPrincipal(userService.requiredById(userId), Map.of()),
@@ -102,8 +106,8 @@ class GeminiE2ETest {
                 .build());
         repoId = repo.getId();
 
-        // 3. Real embedding + store with the USER key
-        VectorStore store = aiModelFactory.vectorStore(userId, apiKey);
+        // 3. Real embedding + store with the USER key (Gemini table)
+        VectorStore store = aiModelFactory.vectorStore(userId, AiProvider.GEMINI, apiKey);
         store.add(List.of(new Document(
                 "DevPilot is a GitHub-connected AI code assistant. It indexes repositories and answers questions with file citations.",
                 Map.of(
@@ -154,7 +158,7 @@ class GeminiE2ETest {
                 if (key != null && repoId != null) {
                     var filter = new FilterExpressionBuilder()
                             .eq(RagSettings.METADATA_REPO_ID, repoId.toString()).build();
-                    aiModelFactory.vectorStore(userId, key).delete(filter);
+                    aiModelFactory.vectorStore(userId, AiProvider.GEMINI, key).delete(filter);
                 }
             }
         } catch (Exception ignored) {

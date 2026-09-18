@@ -50,7 +50,7 @@ public class ChatService {
 
     @Transactional
     public ChatSessionResponse createSession(UUID userId, CreateChatSessionRequest request) {
-        aiKeyResolver.requireDecryptedKey(userId);
+        aiKeyResolver.requireKey(userId);
         Repository repo = repoService.requireOwned(request.repositoryId(), userId);
         if (repo.getIndexStatus() != IndexStatus.READY) {
             throw new BadRequestException("Repository must be indexed before chatting");
@@ -108,18 +108,19 @@ public class ChatService {
                 .content(userContent)
                 .build());
 
-        // 3. RAG retrieval with the user's own key — find code chunks similar to the question
-        String openaiKey = aiKeyResolver.requireDecryptedKey(userId);
-        var userVectorStore = aiModelFactory.vectorStore(userId, openaiKey);
+        // 3. RAG retrieval with the user's own key + provider
+        var userKey = aiKeyResolver.requireKey(userId);
+        var userVectorStore = aiModelFactory.vectorStore(
+                userId, userKey.provider(), userKey.apiKey());
         var retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
 
         // 4. Build LLM prompts from retrieved context + question
         String systemPrompt = chatPromptBuilder.systemPrompt(repo.getFullName());
         String userPrompt = chatPromptBuilder.userPrompt(retrievedContext.contextText(), userContent);
 
-        // 5. Stream the reply with the user's own key (SSE)
+        // 5. Stream the reply with the user's own key + provider (SSE)
         return chatStreamHandler.stream(
-                aiModelFactory.chatModel(userId, openaiKey),
+                aiModelFactory.chatModel(userId, userKey.provider(), userKey.apiKey()),
                 session.getId(),
                 toMessageResponse(userMessage),
                 retrievedContext.citations(),

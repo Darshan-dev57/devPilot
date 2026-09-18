@@ -31,13 +31,18 @@ public class AuthController {
     public ResponseEntity<UserResponse> me() {
         AppUserPrincipal principal = currentUser.require();
         User user = principal.getUser();
+        boolean keySet = user.getOpenaiApiKey() != null && !user.getOpenaiApiKey().isBlank();
+        String provider = user.getAiProvider() != null
+                ? user.getAiProvider().toLowerCase()
+                : "openai";
         return ResponseEntity.ok(new UserResponse(
                 user.getId(),
                 user.getGithubId(),
                 user.getGithubUsername(),
                 user.getDisplayName(),
                 user.getAvatarUrl(),
-                user.getOpenaiApiKey() != null && !user.getOpenaiApiKey().isBlank()));
+                keySet,
+                provider));
     }
     
 }

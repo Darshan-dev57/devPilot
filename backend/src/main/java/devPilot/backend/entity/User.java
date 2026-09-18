@@ -53,6 +53,9 @@ public class User {
     @Column(name = "openai_key_updated_at")
     private Instant openaiKeyUpdatedAt;
 
+    @Column(name = "ai_provider", length = 20)
+    private String aiProvider;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

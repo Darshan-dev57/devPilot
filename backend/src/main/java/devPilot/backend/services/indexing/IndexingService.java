@@ -48,7 +48,7 @@ public class IndexingService {
     private long maxFileBytes;
 
     public Repository startIndexing(UUID repoId, UUID userId) {
-        aiKeyResolver.requireDecryptedKey(userId);
+        aiKeyResolver.requireKey(userId);
         Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
 
@@ -80,8 +80,9 @@ public class IndexingService {
         Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
         String token = userService.decryptAccessToken(userService.requiredById(userId));
-        String openaiKey = aiKeyResolver.requireDecryptedKey(userId);
-        VectorStore userVectorStore = aiModelFactory.vectorStore(userId, openaiKey);
+        var userKey = aiKeyResolver.requireKey(userId);
+        VectorStore userVectorStore = aiModelFactory.vectorStore(
+                userId, userKey.provider(), userKey.apiKey());
 
         deleteExistingVectors(userVectorStore, repoId.toString());
 
