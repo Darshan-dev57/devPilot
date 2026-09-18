@@ -1,7 +1,7 @@
 "use client";
 
 import { Bot, UserRound } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { CitationChips } from "@/components/chat/citation-chips";
@@ -24,11 +24,13 @@ export function ChatMessages({
   messages,
   streamText,
   isLoading,
+  streaming,
 }: {
   repo: Repository;
   messages: ChatMessage[];
   streamText?: string;
   isLoading?: boolean;
+  streaming?: boolean;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -107,6 +109,8 @@ export function ChatMessages({
             );
           })}
 
+          {streaming && !streamText && <ThinkingBubble />}
+
           {streamText && (
             <Message align="start">
               <MessageAvatar>
@@ -130,5 +134,54 @@ export function ChatMessages({
         <div ref={bottomRef} />
       </div>
     </ScrollArea>
+  );
+}
+
+const THINKING_STAGES = [
+  "Searching relevant code…",
+  "Reading matched files…",
+  "Writing the answer…",
+];
+
+/** Animated waiting bubble shown after send, before the first token arrives. */
+function ThinkingBubble() {
+  const [stage, setStage] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(
+      () => setStage((s) => (s + 1) % THINKING_STAGES.length),
+      4000
+    );
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <Message align="start">
+      <MessageAvatar>
+        <Avatar className="size-8">
+          <AvatarFallback className="bg-muted">
+            <Bot className="size-4" />
+          </AvatarFallback>
+        </Avatar>
+      </MessageAvatar>
+      <MessageContent>
+        <Bubble variant="muted" align="start">
+          <BubbleContent className="px-4 py-3">
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="flex gap-1" aria-hidden>
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="size-1.5 animate-bounce rounded-full bg-current"
+                    style={{ animationDelay: `${i * 150}ms` }}
+                  />
+                ))}
+              </span>
+              {THINKING_STAGES[stage]}
+            </span>
+          </BubbleContent>
+        </Bubble>
+      </MessageContent>
+    </Message>
   );
 }
