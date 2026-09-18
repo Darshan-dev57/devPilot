@@ -9,6 +9,7 @@ import {
   MessageSquare,
   RotateCcw,
   Sparkles,
+  Square,
 } from "lucide-react";
 
 import { IndexErrorAlert } from "@/components/dashboard/index-error-alert";
@@ -18,13 +19,14 @@ import { LanguageIcon } from "@/components/icons/language-icon";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import { getRepoProgress, useStartIndexing } from "@/hooks/use-repos";
+import { getRepoProgress, useCancelIndexing, useStartIndexing } from "@/hooks/use-repos";
 import type { Repository } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function RepoCard({ repo }: { repo: Repository }) {
   const router = useRouter();
   const indexMutation = useStartIndexing();
+  const cancelMutation = useCancelIndexing();
   const isIndexing = repo.indexStatus === "INDEXING" || indexMutation.isPending;
   const isFailed = repo.indexStatus === "FAILED";
   const progress = getRepoProgress(repo);
@@ -119,6 +121,16 @@ export function RepoCard({ repo }: { repo: Repository }) {
               </span>
             </div>
             <Progress value={progress || 8} />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-destructive"
+              onClick={() => cancelMutation.mutate(repo.id)}
+              disabled={cancelMutation.isPending}
+            >
+              <Square data-icon="inline-start" className="size-3" />
+              Stop indexing
+            </Button>
           </div>
         )}
 

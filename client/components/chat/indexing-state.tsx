@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, RotateCcw } from "lucide-react";
+import { AlertCircle, Loader2, RotateCcw, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
-import { getRepoProgress, useStartIndexing } from "@/hooks/use-repos";
+import { getRepoProgress, useCancelIndexing, useStartIndexing } from "@/hooks/use-repos";
 import type { IndexStatusResponse, Repository } from "@/lib/api";
 
 export function IndexingState({
@@ -22,6 +22,7 @@ export function IndexingState({
   status?: IndexStatusResponse;
 }) {
   const indexMutation = useStartIndexing();
+  const cancelMutation = useCancelIndexing();
   const filesProcessed = status?.filesProcessed ?? repo.filesProcessed;
   const filesTotal = status?.filesTotal ?? repo.filesTotal;
   const chunkCount = status?.chunkCount ?? repo.chunkCount;
@@ -70,6 +71,18 @@ export function IndexingState({
         <p className="text-center text-xs text-muted-foreground">
           You can leave this page open — chat unlocks when indexing finishes.
         </p>
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-destructive"
+            onClick={() => cancelMutation.mutate(repo.id)}
+            disabled={cancelMutation.isPending}
+          >
+            <Square data-icon="inline-start" className="size-3" />
+            Stop indexing
+          </Button>
+        </div>
       </div>
     </Empty>
   );
