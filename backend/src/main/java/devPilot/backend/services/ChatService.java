@@ -23,6 +23,8 @@ import devPilot.backend.services.ai.ChatPromptBuilder;
 import devPilot.backend.services.ai.ChatStreamHandler;
 import devPilot.backend.services.ai.CitationMapper;
 import devPilot.backend.services.ai.CodeContextRetriever;
+import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.ai.AiModelFactory;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -43,9 +45,12 @@ public class ChatService {
     private final ChatPromptBuilder chatPromptBuilder;
     private final ChatStreamHandler chatStreamHandler;
     private final CitationMapper citationMapper;
+    private final AiKeyResolver aiKeyResolver;
+    private final AiModelFactory aiModelFactory;
 
     @Transactional
     public ChatSessionResponse createSession(UUID userId, CreateChatSessionRequest request) {
+        aiKeyResolver.requireDecryptedKey(userId);
         Repository repo = repoService.requireOwned(request.repositoryId(), userId);
         if (repo.getIndexStatus() != IndexStatus.READY) {
             throw new BadRequestException("Repository must be indexed before chatting");
@@ -103,15 +108,18 @@ public class ChatService {
                 .content(userContent)
                 .build());
 
-        // 3. RAG retrieval — find code chunks similar to the question
-        var retrievedContext = codeContextRetriever.retrieve(repo.getId(), userContent);
+        // 3. RAG retrieval with the user's own key — find code chunks similar to the question
+        String openaiKey = aiKeyResolver.requireDecryptedKey(userId);
+        var userVectorStore = aiModelFactory.vectorStore(userId, openaiKey);
+        var retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
 
         // 4. Build LLM prompts from retrieved context + question
         String systemPrompt = chatPromptBuilder.systemPrompt(repo.getFullName());
         String userPrompt = chatPromptBuilder.userPrompt(retrievedContext.contextText(), userContent);
 
-        // 5. Stream OpenAI response to the client (SSE)
+        // 5. Stream the reply with the user's own key (SSE)
         return chatStreamHandler.stream(
+                aiModelFactory.chatModel(userId, openaiKey),
                 session.getId(),
                 toMessageResponse(userMessage),
                 retrievedContext.citations(),

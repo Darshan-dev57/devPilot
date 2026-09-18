@@ -19,6 +19,8 @@ import devPilot.backend.exceptions.BadRequestException;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.RepositoryRepository;
 import devPilot.backend.services.UserService;
+import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.ai.AiModelFactory;
 import devPilot.backend.services.ai.RagSettings;
 import devPilot.backend.services.github.GitHubRateLimiter;
 import devPilot.backend.services.github.GithubApiClient;
@@ -39,12 +41,14 @@ public class IndexingService {
     private final CodeFileFilter fileFilter;
     private final CodeChunker codeChunker;
     private final GitHubRateLimiter rateLimiter;
-    private final VectorStore vectorStore;
+    private final AiKeyResolver aiKeyResolver;
+    private final AiModelFactory aiModelFactory;
 
     @Value("${app.indexing.max-file-bytes:102400}")
     private long maxFileBytes;
 
     public Repository startIndexing(UUID repoId, UUID userId) {
+        aiKeyResolver.requireDecryptedKey(userId);
         Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
 
@@ -76,8 +80,10 @@ public class IndexingService {
         Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
         String token = userService.decryptAccessToken(userService.requiredById(userId));
+        String openaiKey = aiKeyResolver.requireDecryptedKey(userId);
+        VectorStore userVectorStore = aiModelFactory.vectorStore(userId, openaiKey);
 
-        deleteExistingVectors(repoId.toString());
+        deleteExistingVectors(userVectorStore, repoId.toString());
 
         Map<String, Object> tree = gitHubApiClient.getRepoTree(
                 token, repo.getOwner(), repo.getName(), repo.getDefaultBranch());
@@ -97,7 +103,7 @@ public class IndexingService {
                 batch.addAll(chunks);
                 totalChunks += chunks.size();
                 if (batch.size() >= VECTOR_BATCH_SIZE) {
-                    vectorStore.add(batch);
+                    userVectorStore.add(batch);
                     batch.clear();
                 }
             } catch (Exception ex) {
@@ -112,7 +118,7 @@ public class IndexingService {
         }
 
         if (!batch.isEmpty()) {
-            vectorStore.add(batch);
+            userVectorStore.add(batch);
         }
 
         markReady(repoId, filePaths.size(), processed, totalChunks, repo.getFullName());
@@ -137,14 +143,14 @@ public class IndexingService {
                 .toList();
     }
 
-     private void deleteExistingVectors(String repoId) {
-        try {
-            var filter = new FilterExpressionBuilder().eq(RagSettings.METADATA_REPO_ID, repoId).build();
-            vectorStore.delete(filter);
-        } catch (Exception ex) {
-            log.warn("Could not delete existing vectors for repo {}: {}", repoId, ex.getMessage());
-        }
-    };
+     private void deleteExistingVectors(VectorStore store, String repoId) {
+         try {
+             var filter = new FilterExpressionBuilder().eq(RagSettings.METADATA_REPO_ID, repoId).build();
+             store.delete(filter);
+         } catch (Exception ex) {
+             log.warn("Could not delete existing vectors for repo {}: {}", repoId, ex.getMessage());
+         }
+     };
 
       @Transactional
     protected void updateProgress(
