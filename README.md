@@ -2,6 +2,23 @@
 
 DevPilot is a GitHub-connected AI code assistant. Connect your GitHub account, pick a repository, index its code, and chat with it — answers stream back with file citations.
 
+**Bring your own key:** each user adds their own OpenAI API key once in
+Settings → OpenAI API key (stored encrypted, billed to them). The server operator
+needs no OpenAI key, so the site can serve any number of users at zero AI cost.
+
+## Deploy as a website
+
+The repo ships production Docker images, a full `docker-compose.prod.yml`
+(postgres + backend + frontend + Caddy with automatic TLS), and a step-by-step
+guide for a free Oracle Cloud Ampere ARM VM:
+
+➡️ **[docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md)**
+
+Short version: fill 4 values in `.env` (domain, GitHub OAuth id/secret, DB password,
+encryptor secrets) and run `docker compose -f docker-compose.prod.yml up -d --build`.
+Visitors then just open the site, log in with GitHub, paste their OpenAI key in
+Settings, and start chatting.
+
 ## Features
 
 - GitHub OAuth login (session based)
@@ -78,6 +95,10 @@ app.token-encryptor-salt=change-this-to-a-hex-salt
 
 spring.ai.openai.api-key=sk-your-openai-key
 ```
+
+> The server key is only a fallback placeholder. In normal use every user saves
+> their own key in the app (Settings → OpenAI API key), which the backend
+> encrypts and uses per-request for that user's indexing and chat.
 
 ### 3. Run the backend
 
