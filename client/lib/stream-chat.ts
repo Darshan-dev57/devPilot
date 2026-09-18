@@ -70,6 +70,17 @@ export async function streamChatMessage(
       const data = dataLines.join("\n");
       if (!data) continue;
 
+      if (event === "error") {
+        let message = "AI request failed";
+        try {
+          const parsed = JSON.parse(data) as { message?: string };
+          if (parsed.message) message = parsed.message;
+        } catch {
+          if (data) message = data;
+        }
+        throw new ApiError(502, message);
+      }
+
       try {
         if (event === "token") {
           handlers.onToken?.(JSON.parse(data) as string);

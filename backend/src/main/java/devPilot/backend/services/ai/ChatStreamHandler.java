@@ -1,6 +1,7 @@
 package devPilot.backend.services.ai;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.ai.chat.client.ChatClient;
@@ -67,7 +68,7 @@ public class ChatStreamHandler {
                     .doOnNext(token -> appendToken(emitter, fullReply, token))
                     .doOnError(err -> {
                         log.error("Chat stream error", err);
-                        emitter.completeWithError(err);
+                        sendErrorAndComplete(emitter, err);
                     })
                     .doOnComplete(() -> completeStream(
                             emitter, sessionId, fullReply, citations))
@@ -77,6 +78,22 @@ public class ChatStreamHandler {
         }
 
         return emitter;
+    }
+
+    private void sendErrorAndComplete(SseEmitter emitter, Throwable err) {
+        try {
+            String message = err.getMessage() != null ? err.getMessage() : "AI request failed";
+            if (message.length() > 500) {
+                message = message.substring(0, 500);
+            }
+            emitter.send(SseEmitter.event()
+                    .name("error")
+                    .data(Map.of("message", message), MediaType.APPLICATION_JSON));
+        } catch (Exception sendEx) {
+            log.warn("Could not send error event to client", sendEx);
+        } finally {
+            emitter.completeWithError(err);
+        }
     }
 
     private void appendToken(SseEmitter emitter, StringBuilder fullReply, String token) {
