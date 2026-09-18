@@ -74,7 +74,8 @@ public class ChatStreamHandler {
                             emitter, sessionId, fullReply, citations))
                     .subscribe();
         } catch (Exception ex) {
-            emitter.completeWithError(ex);
+            log.error("Chat stream setup failed", ex);
+            sendErrorAndComplete(emitter, ex);
         }
 
         return emitter;
@@ -113,10 +114,15 @@ public class ChatStreamHandler {
             StringBuilder fullReply,
             List<CitationDto> citations) {
         try {
+            String content = fullReply.toString();
+            if (content.isBlank()) {
+                content = "I couldn't generate a response for that. Try rephrasing — for example, ask what a specific file or feature does, and I'll use the indexed code to answer.";
+                fullReply = new StringBuilder(content);
+            }
             ChatMessage assistant = chatMessageRepository.save(ChatMessage.builder()
                     .sessionId(sessionId)
                     .role(MessageRole.ASSISTANT)
-                    .content(fullReply.toString())
+                    .content(content)
                     .citations(citationMapper.toJson(citations))
                     .build());
 
@@ -126,7 +132,8 @@ public class ChatStreamHandler {
             emitter.send(SseEmitter.event().name("done").data("[DONE]"));
             emitter.complete();
         } catch (Exception ex) {
-            emitter.completeWithError(ex);
+            log.error("Failed to complete chat stream", ex);
+            sendErrorAndComplete(emitter, ex);
         }
     }
 

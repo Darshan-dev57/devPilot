@@ -113,6 +113,21 @@ public class ChatService {
         var userVectorStore = aiModelFactory.vectorStore(
                 userId, userKey.provider(), userKey.apiKey());
         var retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
+        // If this repo was indexed under the other provider, its vectors live in the other table.
+        // Fall back to the legacy shared table so older indexed repos keep responding after the provider split.
+        if (retrievedContext.citations().isEmpty()
+                && "(no matching code chunks found)".equals(retrievedContext.contextText())) {
+            try {
+                var fallback = codeContextRetriever.retrieve(repo.getId(), userContent);
+                if (!fallback.citations().isEmpty()) {
+                    retrievedContext = fallback;
+                }
+            } catch (Exception ex) {
+                // fallback is best-effort; keep the original empty context if it fails
+                org.slf4j.LoggerFactory.getLogger(ChatService.class)
+                        .warn("Fallback retrieval failed for repo {}: {}", repo.getId(), ex.getMessage());
+            }
+        }
 
         // 4. Build LLM prompts from retrieved context + question
         String systemPrompt = chatPromptBuilder.systemPrompt(repo.getFullName());
