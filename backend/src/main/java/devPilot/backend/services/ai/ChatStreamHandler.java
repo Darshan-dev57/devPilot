@@ -35,6 +35,19 @@ public class ChatStreamHandler {
             List<CitationDto> citations,
             String systemPrompt,
             String userPrompt) {
+        return stream(chatModel, sessionId, savedUserMessage, citations, systemPrompt, userPrompt);
+    }
+
+    /**
+     * Stream using a caller-supplied model, e.g. a per-user BYOK model.
+     */
+    public SseEmitter stream(
+            ChatModel model,
+            UUID sessionId,
+            ChatMessageResponse savedUserMessage,
+            List<CitationDto> citations,
+            String systemPrompt,
+            String userPrompt) {
 
         SseEmitter emitter = new SseEmitter(RagSettings.STREAM_TIMEOUT_MS);
         StringBuilder fullReply = new StringBuilder();
@@ -44,7 +57,7 @@ public class ChatStreamHandler {
                     .name("user_message")
                     .data(savedUserMessage));
 
-            ChatClient.builder(chatModel)
+            ChatClient.builder(model)
                     .build()
                     .prompt()
                     .system(systemPrompt)

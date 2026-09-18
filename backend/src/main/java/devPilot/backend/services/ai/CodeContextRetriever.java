@@ -17,9 +17,15 @@ public class CodeContextRetriever {
     private static final String NO_MATCHES = "(no matching code chunks found)";
 
     private final VectorStore vectorStore;
-    private final CitationMapper citationMapper; 
+    private final CitationMapper citationMapper;
 
-     public RetrievedContext retrieve(UUID repositoryId, String question) {
+    /** Retrieval with the default (server) vector store. */
+    public RetrievedContext retrieve(UUID repositoryId, String question) {
+        return retrieve(vectorStore, repositoryId, question);
+    }
+
+    /** Retrieval scoped to a caller-supplied store, e.g. a per-user BYOK store. */
+    public RetrievedContext retrieve(VectorStore store, UUID repositoryId, String question) {
         var filter = new FilterExpressionBuilder()
                 .eq(RagSettings.METADATA_REPO_ID, repositoryId.toString())
                 .build();
@@ -30,7 +36,7 @@ public class CodeContextRetriever {
                 .filterExpression(filter)
                 .build();
 
-        var documents = vectorStore.similaritySearch(search);
+        var documents = store.similaritySearch(search);
 
         var citations = documents.stream()
                 .map(citationMapper::fromDocument)
