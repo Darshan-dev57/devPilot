@@ -57,7 +57,22 @@ public class RepoController {
     @PostMapping("/{id}/cancel-index")
     public ResponseEntity<RepositoryResponse> cancelIndex(@PathVariable UUID id) {
         UUID userId = currentUser.require().getId();
-        Repository repo = indexingService.cancelIndexing(id, userId);
+        Repository repo = indexingService.pauseIndexing(id, userId);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
+    }
+
+    @PostMapping("/{id}/pause-index")
+    public ResponseEntity<RepositoryResponse> pauseIndex(@PathVariable UUID id) {
+        UUID userId = currentUser.require().getId();
+        Repository repo = indexingService.pauseIndexing(id, userId);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
+    }
+
+    @PostMapping("/{id}/resume-index")
+    public ResponseEntity<RepositoryResponse> resumeIndex(@PathVariable UUID id) {
+        UUID userId = currentUser.require().getId();
+        Repository repo = indexingService.resumeIndexing(id, userId);
+        indexingService.resumeAsync(id, userId);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 

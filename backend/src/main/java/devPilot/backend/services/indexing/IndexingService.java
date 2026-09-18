@@ -46,7 +46,7 @@ public class IndexingService {
     private final AiKeyResolver aiKeyResolver;
     private final AiModelFactory aiModelFactory;
 
-    private final ConcurrentHashMap<UUID, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, AtomicBoolean> pauseFlags = new ConcurrentHashMap<>();
 
     @Value("${app.indexing.max-file-bytes:102400}")
     private long maxFileBytes;
@@ -59,8 +59,11 @@ public class IndexingService {
         if (repo.getIndexStatus() == IndexStatus.INDEXING) {
             throw new BadRequestException("Repository is already being indexed");
         }
+        if (repo.getIndexStatus() == IndexStatus.PAUSED) {
+            throw new BadRequestException("Indexing is paused — resume it to continue");
+        }
 
-        cancelFlags.put(repoId, new AtomicBoolean(false));
+        pauseFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
         repo.setFilesProcessed(0);
         repo.setFilesTotal(0);
@@ -72,37 +75,60 @@ public class IndexingService {
 
     @Async("indexingExecutor")
      public void indexAsync(UUID repoId, UUID userId) {
+        doIndexAsync(repoId, userId, false);
+    }
+
+    @Async("indexingExecutor")
+    public void resumeAsync(UUID repoId, UUID userId) {
+        doIndexAsync(repoId, userId, true);
+    }
+
+    private void doIndexAsync(UUID repoId, UUID userId, boolean resume) {
         try {
-            doIndex(repoId, userId);
+            doIndex(repoId, userId, resume);
         } catch (Exception ex) {
-            if (isCancelled(repoId)) {
-                markCancelled(repoId);
+            if (isPaused(repoId)) {
+                markPaused(repoId);
             } else {
                 log.error("Indexing failed for repo {}", repoId, ex);
                 markFailed(repoId, ex.getMessage());
             }
         } finally {
-            cancelFlags.remove(repoId);
+            pauseFlags.remove(repoId);
         }
     }
 
-    public Repository cancelIndexing(UUID repoId, UUID userId) {
+    public Repository pauseIndexing(UUID repoId, UUID userId) {
         Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
         if (repo.getIndexStatus() != IndexStatus.INDEXING) {
             throw new BadRequestException("Repository is not being indexed");
         }
-        cancelFlags.computeIfAbsent(repoId, k -> new AtomicBoolean(false)).set(true);
+        pauseFlags.computeIfAbsent(repoId, k -> new AtomicBoolean(false)).set(true);
         return repo;
     }
 
-    private boolean isCancelled(UUID repoId) {
-        AtomicBoolean flag = cancelFlags.get(repoId);
+    public Repository resumeIndexing(UUID repoId, UUID userId) {
+        aiKeyResolver.requireKey(userId);
+        Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
+                .orElseThrow(() -> new NotFoundException("Repository not found"));
+        if (repo.getIndexStatus() != IndexStatus.PAUSED) {
+            throw new BadRequestException("Indexing is not paused");
+        }
+        repo.setIndexStatus(IndexStatus.INDEXING);
+        repo.setErrorMessage(null);
+        repo.setUpdatedAt(Instant.now());
+        pauseFlags.put(repoId, new AtomicBoolean(false));
+        return repositoryRepository.save(repo);
+    }
+
+    private boolean isPaused(UUID repoId) {
+        AtomicBoolean flag = pauseFlags.get(repoId);
         return flag != null && flag.get();
     }
 
 
-      private void doIndex(UUID repoId, UUID userId) {
+      private void doIndex(UUID repoId, UUID userId, boolean resume) {
         Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
         String token = userService.decryptAccessToken(userService.requiredById(userId));
@@ -110,21 +136,30 @@ public class IndexingService {
         VectorStore userVectorStore = aiModelFactory.vectorStore(
                 userId, userKey.provider(), userKey.apiKey());
 
-        deleteExistingVectors(userVectorStore, repoId.toString());
-
         Map<String, Object> tree = gitHubApiClient.getRepoTree(
                 token, repo.getOwner(), repo.getName(), repo.getDefaultBranch());
         List<String> filePaths = listIndexableFiles(tree);
 
-        updateProgress(repoId, filePaths.size(), 0, 0, IndexStatus.INDEXING, null);
+        int startFrom = 0;
+        int totalChunks = 0;
+        if (resume) {
+            // Continue where the pause left off; the file order below is stable,
+            // so the first N files are exactly the ones already embedded.
+            startFrom = Math.min(repo.getFilesProcessed(), filePaths.size());
+            totalChunks = repo.getChunkCount();
+        } else {
+            deleteExistingVectors(userVectorStore, repoId.toString());
+        }
+
+        updateProgress(repoId, filePaths.size(), startFrom, totalChunks, IndexStatus.INDEXING, null);
 
         List<Document> batch = new ArrayList<>();
-        int processed = 0;
-        int totalChunks = 0;
+        int processed = startFrom;
 
-        for (String path : filePaths) {
-            if (isCancelled(repoId)) {
-                markCancelled(repoId);
+        for (String path : filePaths.subList(startFrom, filePaths.size())) {
+            if (isPaused(repoId)) {
+                flushAndPause(repoId, userVectorStore, batch,
+                        filePaths.size(), processed, totalChunks);
                 return;
             }
             try {
@@ -134,8 +169,9 @@ public class IndexingService {
                 batch.addAll(chunks);
                 totalChunks += chunks.size();
                 if (batch.size() >= VECTOR_BATCH_SIZE) {
-                    if (isCancelled(repoId)) {
-                        markCancelled(repoId);
+                    if (isPaused(repoId)) {
+                        flushAndPause(repoId, userVectorStore, batch,
+                                filePaths.size(), processed, totalChunks);
                         return;
                     }
                     userVectorStore.add(batch);
@@ -159,6 +195,21 @@ public class IndexingService {
         markReady(repoId, filePaths.size(), processed, totalChunks, repo.getFullName());
     }
 
+    /** Persist any buffered vectors, then park the job as PAUSED for later resume. */
+    private void flushAndPause(UUID repoId, VectorStore store, List<Document> batch,
+            int total, int processed, int chunks) {
+        if (!batch.isEmpty()) {
+            try {
+                store.add(batch);
+            } catch (Exception ex) {
+                log.warn("Could not flush final batch for paused repo {}: {}", repoId, ex.getMessage());
+            }
+            batch.clear();
+        }
+        updateProgress(repoId, total, processed, chunks, IndexStatus.PAUSED, null);
+        log.info("Indexing paused for repo {} at {}/{} files", repoId, processed, total);
+    }
+
 
        @SuppressWarnings("unchecked")
     private List<String> listIndexableFiles(Map<String, Object> tree) {
@@ -175,6 +226,7 @@ public class IndexingService {
                     return fileFilter.isEligible(path, size, maxFileBytes);
                 })
                 .map(entry -> String.valueOf(entry.get("path")))
+                .sorted()
                 .toList();
     }
 
@@ -222,14 +274,14 @@ public class IndexingService {
     }
 
      @Transactional
-    protected void markCancelled(UUID repoId) {
+    protected void markPaused(UUID repoId) {
         repositoryRepository.findById(repoId).ifPresent(repo -> {
-            repo.setIndexStatus(IndexStatus.PENDING);
+            repo.setIndexStatus(IndexStatus.PAUSED);
             repo.setErrorMessage(null);
             repo.setUpdatedAt(Instant.now());
             repositoryRepository.save(repo);
         });
-        log.info("Indexing cancelled for repo {}", repoId);
+        log.info("Indexing paused for repo {}", repoId);
     }
 
       @Transactional
