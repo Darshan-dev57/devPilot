@@ -133,6 +133,7 @@ docker run --rm -v devpilot_devpilot_pg_data:/data -v $PWD:/backup \
 | Browser can't reach the site | VCN security list or instance iptables missing 80/443 |
 | TLS error / cert not issued | DNS A record wrong, or port 80 blocked during first visit |
 | Login lands on `?error=oauth_failed` | Callback URL mismatch in the GitHub OAuth App, or wrong client id/secret |
+| Login lands on `?error=session` (split hosting) | Session cookie blocked cross-site: needs `SameSite=None; Secure` — set `SERVER_SERVLET_SESSION_COOKIE_SAME_SITE=none` + `..._SECURE=true` on the backend |
 | `401` right after GitHub approve | `TOKEN_ENCRYPTOR_*` changed after users were created — keep it stable |
 | Index/chat says "Add your OpenAI API key" | Expected: that user hasn't saved a key in Settings yet |
 | OOM / slowness | Check `docker stats`; 2 OCPU/12 GB is enough — look for runaway indexing first |
