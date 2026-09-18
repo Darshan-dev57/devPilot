@@ -30,9 +30,13 @@ services:
         value: 60000
       - key: SPRING_JPA_HIBERNATE_DDL_AUTO
         value: update
+      # Placeholder until step 4 (real OAuth app needs the backend URL first).
+      # sync:false keeps Render from overwriting your real keys on later deploys.
       - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID
+        value: temp-client-id
         sync: false
       - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET
+        value: temp-client-secret
         sync: false
       - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_SCOPE
         value: read:user,repo
