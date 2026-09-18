@@ -130,7 +130,7 @@ export function ChatView({ repoId }: { repoId: string }) {
         />
 
         <section className="flex min-h-[70vh] min-w-0 flex-1 flex-col">
-          {user && !user.openaiKeySet && (
+          {user && !user.aiKeySet && (
             <div className="p-4 pb-0 md:px-6">
               <ApiKeyBanner />
             </div>

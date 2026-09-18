@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useCurrentUser, useLogout } from "@/hooks/use-auth";
-import { OpenAiKeyCard } from "@/components/settings/openai-key-card";
+import { AiKeyCard } from "@/components/settings/ai-key-card";
 
 export function SettingsDashboard() {
   const { data: user } = useCurrentUser();
@@ -77,7 +77,7 @@ export function SettingsDashboard() {
         </CardContent>
       </Card>
 
-      <OpenAiKeyCard />
+      <AiKeyCard />
 
       <Card>
         <CardHeader>

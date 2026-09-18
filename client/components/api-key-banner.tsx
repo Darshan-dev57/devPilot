@@ -11,10 +11,10 @@ export function ApiKeyBanner() {
       <div className="flex items-start gap-3">
         <KeyRound className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
         <div>
-          <p className="font-medium">Add your OpenAI API key</p>
+          <p className="font-medium">Add your AI API key</p>
           <p className="text-sm text-muted-foreground">
-            Indexing and chat need your own key. It is stored encrypted and
-            only used for your requests.
+            Indexing and chat need your own OpenAI or Gemini key. It is stored
+            encrypted and only used for your requests.
           </p>
         </div>
       </div>

@@ -1,12 +1,15 @@
 export type IndexStatus = "PENDING" | "INDEXING" | "READY" | "FAILED";
 
+export type AiProvider = "openai" | "gemini";
+
 export type User = {
   id: string;
   githubId: number;
   githubUsername: string;
   displayName: string;
   avatarUrl: string | null;
-  openaiKeySet: boolean;
+  aiKeySet: boolean;
+  aiProvider: AiProvider;
 };
 
 export type Repository = {
@@ -139,13 +142,13 @@ export const api = {
     ),
   getMessages: (sessionId: string) =>
     apiFetch<ChatMessage[]>(`/api/chat/sessions/${sessionId}`),
-  saveOpenAiKey: (apiKey: string) =>
-    apiFetch<{ openaiKeySet: boolean }>("/api/users/me/openai-key", {
+  saveAiKey: (provider: AiProvider, apiKey: string) =>
+    apiFetch<{ aiKeySet: boolean; aiProvider: AiProvider }>("/api/users/me/ai-key", {
       method: "PUT",
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ provider, apiKey }),
     }),
-  deleteOpenAiKey: () =>
-    apiFetch<{ openaiKeySet: boolean }>("/api/users/me/openai-key", {
+  deleteAiKey: () =>
+    apiFetch<{ aiKeySet: boolean }>("/api/users/me/ai-key", {
       method: "DELETE",
     }),
 };
