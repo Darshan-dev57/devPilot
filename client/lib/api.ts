@@ -6,6 +6,7 @@ export type User = {
   githubUsername: string;
   displayName: string;
   avatarUrl: string | null;
+  openaiKeySet: boolean;
 };
 
 export type Repository = {
@@ -70,7 +71,10 @@ export class ApiError extends Error {
 }
 
 export function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
+  // Empty string means same-origin (production behind reverse proxy).
+  // Only fall back to localhost when the variable is not set at all (local dev).
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL;
+  return configured === undefined ? "http://localhost:8080" : configured;
 }
 
 export function getGithubLoginUrl() {
@@ -135,4 +139,13 @@ export const api = {
     ),
   getMessages: (sessionId: string) =>
     apiFetch<ChatMessage[]>(`/api/chat/sessions/${sessionId}`),
+  saveOpenAiKey: (apiKey: string) =>
+    apiFetch<{ openaiKeySet: boolean }>("/api/users/me/openai-key", {
+      method: "PUT",
+      body: JSON.stringify({ apiKey }),
+    }),
+  deleteOpenAiKey: () =>
+    apiFetch<{ openaiKeySet: boolean }>("/api/users/me/openai-key", {
+      method: "DELETE",
+    }),
 };

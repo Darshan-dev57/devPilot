@@ -11,6 +11,8 @@ import { IndexingState } from "@/components/chat/indexing-state";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApiKeyBanner } from "@/components/api-key-banner";
+import { useCurrentUser } from "@/hooks/use-auth";
 import {
   useChatMessages,
   useChatSessions,
@@ -21,6 +23,7 @@ import { useIndexStatus, useRepository } from "@/hooks/use-repos";
 
 export function ChatView({ repoId }: { repoId: string }) {
   const repoQuery = useRepository(repoId);
+  const { data: user } = useCurrentUser();
   const isIndexing = repoQuery.data?.indexStatus === "INDEXING";
   const statusQuery = useIndexStatus(
     repoId,
@@ -127,6 +130,11 @@ export function ChatView({ repoId }: { repoId: string }) {
         />
 
         <section className="flex min-h-[70vh] min-w-0 flex-1 flex-col">
+          {user && !user.openaiKeySet && (
+            <div className="p-4 pb-0 md:px-6">
+              <ApiKeyBanner />
+            </div>
+          )}
           {!ready ? (
             <IndexingState repo={repo} status={statusQuery.data} />
           ) : (
