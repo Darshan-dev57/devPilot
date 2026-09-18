@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.stereotype.Service;
 import org.springframework.ai.document.Document;
@@ -44,6 +46,8 @@ public class IndexingService {
     private final AiKeyResolver aiKeyResolver;
     private final AiModelFactory aiModelFactory;
 
+    private final ConcurrentHashMap<UUID, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
+
     @Value("${app.indexing.max-file-bytes:102400}")
     private long maxFileBytes;
 
@@ -56,6 +60,7 @@ public class IndexingService {
             throw new BadRequestException("Repository is already being indexed");
         }
 
+        cancelFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
         repo.setFilesProcessed(0);
         repo.setFilesTotal(0);
@@ -70,9 +75,30 @@ public class IndexingService {
         try {
             doIndex(repoId, userId);
         } catch (Exception ex) {
-            log.error("Indexing failed for repo {}", repoId, ex);
-            markFailed(repoId, ex.getMessage());
+            if (isCancelled(repoId)) {
+                markCancelled(repoId);
+            } else {
+                log.error("Indexing failed for repo {}", repoId, ex);
+                markFailed(repoId, ex.getMessage());
+            }
+        } finally {
+            cancelFlags.remove(repoId);
         }
+    }
+
+    public Repository cancelIndexing(UUID repoId, UUID userId) {
+        Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
+                .orElseThrow(() -> new NotFoundException("Repository not found"));
+        if (repo.getIndexStatus() != IndexStatus.INDEXING) {
+            throw new BadRequestException("Repository is not being indexed");
+        }
+        cancelFlags.computeIfAbsent(repoId, k -> new AtomicBoolean(false)).set(true);
+        return repo;
+    }
+
+    private boolean isCancelled(UUID repoId) {
+        AtomicBoolean flag = cancelFlags.get(repoId);
+        return flag != null && flag.get();
     }
 
 
@@ -97,6 +123,10 @@ public class IndexingService {
         int totalChunks = 0;
 
         for (String path : filePaths) {
+            if (isCancelled(repoId)) {
+                markCancelled(repoId);
+                return;
+            }
             try {
                 String content = gitHubApiClient.getFileContent(
                         token, repo.getOwner(), repo.getName(), path);
@@ -104,6 +134,10 @@ public class IndexingService {
                 batch.addAll(chunks);
                 totalChunks += chunks.size();
                 if (batch.size() >= VECTOR_BATCH_SIZE) {
+                    if (isCancelled(repoId)) {
+                        markCancelled(repoId);
+                        return;
+                    }
                     userVectorStore.add(batch);
                     batch.clear();
                 }
@@ -188,6 +222,17 @@ public class IndexingService {
     }
 
      @Transactional
+    protected void markCancelled(UUID repoId) {
+        repositoryRepository.findById(repoId).ifPresent(repo -> {
+            repo.setIndexStatus(IndexStatus.PENDING);
+            repo.setErrorMessage(null);
+            repo.setUpdatedAt(Instant.now());
+            repositoryRepository.save(repo);
+        });
+        log.info("Indexing cancelled for repo {}", repoId);
+    }
+
+      @Transactional
     protected void markFailed(UUID repoId, String message) {
         repositoryRepository.findById(repoId).ifPresent(repo -> {
             repo.setIndexStatus(IndexStatus.FAILED);
