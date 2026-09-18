@@ -49,6 +49,12 @@ services:
         sync: false # generate: openssl rand -hex 32
       - key: APP_TOKEN_ENCRYPTOR_SALT
         sync: false # generate: openssl rand -hex 8
+      # Frontend (Vercel) and backend (Render) are different sites, so the
+      # session cookie must be sent cross-site: SameSite=None requires Secure.
+      - key: SERVER_SERVLET_SESSION_COOKIE_SAME_SITE
+        value: none
+      - key: SERVER_SERVLET_SESSION_COOKIE_SECURE
+        value: "true"
       # Placeholder on purpose: every user brings their own key in Settings.
       - key: SPRING_AI_OPENAI_API_KEY
         value: sk-byok-mode-placeholder
