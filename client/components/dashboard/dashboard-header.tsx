@@ -35,6 +35,7 @@ const statusFilters: { value: FilterStatus; label: string }[] = [
   { value: "ALL", label: "All" },
   { value: "READY", label: "Ready" },
   { value: "INDEXING", label: "Indexing" },
+  { value: "PAUSED", label: "Paused" },
   { value: "PENDING", label: "New" },
   { value: "FAILED", label: "Failed" },
 ];

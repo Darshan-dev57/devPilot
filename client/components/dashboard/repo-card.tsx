@@ -7,9 +7,10 @@ import {
   GitBranch,
   Lock,
   MessageSquare,
+  Pause,
+  Play,
   RotateCcw,
   Sparkles,
-  Square,
 } from "lucide-react";
 
 import { IndexErrorAlert } from "@/components/dashboard/index-error-alert";
@@ -19,15 +20,17 @@ import { LanguageIcon } from "@/components/icons/language-icon";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
-import { getRepoProgress, useCancelIndexing, useStartIndexing } from "@/hooks/use-repos";
+import { getRepoProgress, usePauseIndexing, useResumeIndexing, useStartIndexing } from "@/hooks/use-repos";
 import type { Repository } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function RepoCard({ repo }: { repo: Repository }) {
   const router = useRouter();
   const indexMutation = useStartIndexing();
-  const cancelMutation = useCancelIndexing();
+  const pauseMutation = usePauseIndexing();
+  const resumeMutation = useResumeIndexing();
   const isIndexing = repo.indexStatus === "INDEXING" || indexMutation.isPending;
+  const isPaused = repo.indexStatus === "PAUSED";
   const isFailed = repo.indexStatus === "FAILED";
   const progress = getRepoProgress(repo);
 
@@ -38,6 +41,12 @@ export function RepoCard({ repo }: { repo: Repository }) {
   function handlePrimary() {
     if (repo.indexStatus === "READY") {
       openChat();
+      return;
+    }
+    if (repo.indexStatus === "PAUSED") {
+      resumeMutation.mutate(repo.id, {
+        onSuccess: () => router.push(`/chat/${repo.id}`),
+      });
       return;
     }
     indexMutation.mutate(repo.id, {
@@ -124,12 +133,12 @@ export function RepoCard({ repo }: { repo: Repository }) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-destructive"
-              onClick={() => cancelMutation.mutate(repo.id)}
-              disabled={cancelMutation.isPending}
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => pauseMutation.mutate(repo.id)}
+              disabled={pauseMutation.isPending}
             >
-              <Square data-icon="inline-start" className="size-3" />
-              Stop indexing
+              <Pause data-icon="inline-start" className="size-3" />
+              Pause indexing
             </Button>
           </div>
         )}
@@ -164,13 +173,18 @@ export function RepoCard({ repo }: { repo: Repository }) {
             size="sm"
             variant={isFailed ? "outline" : "default"}
             className={cn(isFailed && "border-destructive/30 text-destructive hover:bg-destructive/10")}
-            disabled={isIndexing}
+            disabled={isIndexing || resumeMutation.isPending}
             onClick={handlePrimary}
           >
             {isIndexing ? (
               <>
                 <Spinner data-icon="inline-start" />
                 Indexing
+              </>
+            ) : isPaused ? (
+              <>
+                <Play data-icon="inline-start" />
+                Resume
               </>
             ) : repo.indexStatus === "READY" ? (
               <>

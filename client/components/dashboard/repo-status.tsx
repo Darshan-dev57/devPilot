@@ -8,6 +8,8 @@ export function indexStatusLabel(status: IndexStatus) {
       return "Ready";
     case "INDEXING":
       return "Indexing";
+    case "PAUSED":
+      return "Paused";
     case "FAILED":
       return "Failed";
     default:
@@ -29,7 +31,9 @@ export function IndexStatusBadge({
         ? "destructive"
         : status === "INDEXING"
           ? "secondary"
-          : "outline";
+          : status === "PAUSED"
+            ? "secondary"
+            : "outline";
 
   return (
     <Badge variant={variant} className={cn(className)}>

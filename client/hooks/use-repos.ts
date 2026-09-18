@@ -87,11 +87,11 @@ export function useStartIndexing() {
   });
 }
 
-export function useCancelIndexing() {
+export function usePauseIndexing() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (repoId: string) => api.cancelIndex(repoId),
+    mutationFn: (repoId: string) => api.pauseIndex(repoId),
     onSuccess: (repo) => {
       queryClient.setQueryData(queryKeys.repos.detail(repo.id), repo);
       updateRepoInListCache(queryClient, repo);
@@ -99,14 +99,41 @@ export function useCancelIndexing() {
         queryKey: queryKeys.repos.status(repo.id),
       });
       toast.add({
-        title: "Indexing stopped",
-        description: `Stopped indexing ${repo.fullName}.`,
+        title: "Indexing paused",
+        description: `Paused ${repo.fullName} — resume anytime.`,
         type: "success",
       });
     },
     onError: (error: Error) => {
       toast.add({
-        title: "Could not stop indexing",
+        title: "Could not pause indexing",
+        description: error.message,
+        type: "error",
+      });
+    },
+  });
+}
+
+export function useResumeIndexing() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (repoId: string) => api.resumeIndex(repoId),
+    onSuccess: (repo) => {
+      queryClient.setQueryData(queryKeys.repos.detail(repo.id), repo);
+      updateRepoInListCache(queryClient, repo);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.repos.status(repo.id),
+      });
+      toast.add({
+        title: "Indexing resumed",
+        description: `Resuming ${repo.fullName}…`,
+        type: "loading",
+      });
+    },
+    onError: (error: Error) => {
+      toast.add({
+        title: "Could not resume indexing",
         description: error.message,
         type: "error",
       });

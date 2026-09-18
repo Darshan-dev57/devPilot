@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, RotateCcw, Square } from "lucide-react";
+import { AlertCircle, Loader2, Pause, Play, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
-import { getRepoProgress, useCancelIndexing, useStartIndexing } from "@/hooks/use-repos";
+import { getRepoProgress, usePauseIndexing, useResumeIndexing, useStartIndexing } from "@/hooks/use-repos";
 import type { IndexStatusResponse, Repository } from "@/lib/api";
 
 export function IndexingState({
@@ -22,7 +22,8 @@ export function IndexingState({
   status?: IndexStatusResponse;
 }) {
   const indexMutation = useStartIndexing();
-  const cancelMutation = useCancelIndexing();
+  const pauseMutation = usePauseIndexing();
+  const resumeMutation = useResumeIndexing();
   const filesProcessed = status?.filesProcessed ?? repo.filesProcessed;
   const filesTotal = status?.filesTotal ?? repo.filesTotal;
   const chunkCount = status?.chunkCount ?? repo.chunkCount;
@@ -53,6 +54,31 @@ export function IndexingState({
     );
   }
 
+  if (indexStatus === "PAUSED") {
+    return (
+      <Empty className="h-full border-0">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Pause />
+          </EmptyMedia>
+          <EmptyTitle>Indexing paused</EmptyTitle>
+          <EmptyDescription>
+            {filesTotal > 0
+              ? `Paused at ${filesProcessed} of ${filesTotal} files · ${chunkCount} chunks kept — resume continues where it stopped.`
+              : "Indexing is paused — resume to continue."}
+          </EmptyDescription>
+        </EmptyHeader>
+        <Button
+          onClick={() => resumeMutation.mutate(repo.id)}
+          disabled={resumeMutation.isPending}
+        >
+          <Play data-icon="inline-start" />
+          Resume indexing
+        </Button>
+      </Empty>
+    );
+  }
+
   return (
     <Empty className="h-full border-0">
       <EmptyHeader>
@@ -75,12 +101,12 @@ export function IndexingState({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-muted-foreground hover:text-destructive"
-            onClick={() => cancelMutation.mutate(repo.id)}
-            disabled={cancelMutation.isPending}
+            className="h-7 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => pauseMutation.mutate(repo.id)}
+            disabled={pauseMutation.isPending}
           >
-            <Square data-icon="inline-start" className="size-3" />
-            Stop indexing
+            <Pause data-icon="inline-start" className="size-3" />
+            Pause indexing
           </Button>
         </div>
       </div>
