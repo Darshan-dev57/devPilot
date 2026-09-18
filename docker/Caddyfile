@@ -1,0 +1,10 @@
+# DevPilot production reverse proxy.
+# DOMAIN is passed through from the .env file (e.g. devpilot.example.com,
+# or devpilot.203.0.113.10.nip.io if you have no domain yet).
+# Caddy terminates TLS automatically via Let's Encrypt.
+{$DOMAIN} {
+	reverse_proxy /api/* backend:8080
+	reverse_proxy /oauth2/* backend:8080
+	reverse_proxy /login/oauth2/* backend:8080
+	reverse_proxy /* frontend:3000
+}
