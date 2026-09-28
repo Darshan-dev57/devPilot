@@ -54,6 +54,18 @@ public class GithubApiClient {
         return all;
     }
 
+      /**
+       * Fetch one repository's metadata. Works for any repo the token can see,
+       * including public repos the user doesn't own (their token quota applies).
+       */
+      public Map<String, Object> getRepository(String accessToken, String owner, String repo) {
+        return client(accessToken)
+                .get()
+                .uri("/repos/{owner}/{repo}", owner, repo)
+                .retrieve()
+                .body(MAP);
+    }
+
       public Map<String, Object> getRepoTree(String accessToken, String owner, String repo, String branch) {
         return client(accessToken)
                 .get()

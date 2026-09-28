@@ -8,16 +8,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import devPilot.backend.dto.AddPublicRepoRequest;
 import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
 import devPilot.backend.entity.Repository;
 import devPilot.backend.security.CurrentUser;
 import devPilot.backend.services.RepoService;
 import devPilot.backend.services.indexing.IndexingService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -44,6 +47,19 @@ public class RepoController {
     public RepositoryResponse get(@PathVariable UUID id) {
         UUID userId = currentUser.require().getId();
         return repoService.toResponse(repoService.requireOwned(id, userId));
+    }
+
+    /**
+     * Add any visible repository (e.g. a public repo the user doesn't own) by
+     * owner/name. Idempotent: 200 with the existing row if already added.
+     */
+    @PostMapping("/by-url")
+    public ResponseEntity<RepositoryResponse> addByUrl(
+            @Valid @RequestBody AddPublicRepoRequest request) {
+        UUID userId = currentUser.require().getId();
+        Repository repo = repoService.addPublicRepo(
+                userId, request.owner().trim(), request.name().trim());
+        return ResponseEntity.ok(repoService.toResponse(repo));
     }
 
     @PostMapping("/{id}/index")

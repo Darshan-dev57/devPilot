@@ -2,12 +2,16 @@ package devPilot.backend.services;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
@@ -33,6 +37,7 @@ public class RepoService {
         List<Map<String, Object>> remoteRepos = gitHubApiClient.listUserRepos(token);
 
         List<Repository> saved = new ArrayList<>();
+        Set<UUID> syncedIds = new HashSet<>();
 
           for (Map<String, Object> remote : remoteRepos) {
             Long githubRepoId = toLong(remote.get("id"));
@@ -40,35 +45,53 @@ public class RepoService {
                     .findByUserIdAndGithubRepoId(userId, githubRepoId)
                     .orElseGet(Repository::new);
 
-            String fullName = String.valueOf(remote.get("full_name"));
-            String[] parts = fullName.split("/", 2);
-
-            repo.setUserId(userId);
-            repo.setGithubRepoId(githubRepoId);
-            repo.setOwner(parts.length > 0 ? parts[0] : String.valueOf(remote.get("owner")));
-            repo.setName(parts.length > 1 ? parts[1] : String.valueOf(remote.get("name")));
-            repo.setFullName(fullName);
-            repo.setPrivate(Boolean.TRUE.equals(remote.get("private")));
-            repo.setDefaultBranch(remote.get("default_branch") != null
-                    ? String.valueOf(remote.get("default_branch"))
-                    : "main");
-            repo.setLanguage(remote.get("language") != null ? String.valueOf(remote.get("language")) : null);
-            repo.setHtmlUrl(remote.get("html_url") != null ? String.valueOf(remote.get("html_url")) : null);
-            repo.setDescription(remote.get("description") != null ? String.valueOf(remote.get("description")) : null);
-            repo.setUpdatedAt(Instant.now());
-            if (repo.getOwner() == null || repo.getOwner().isBlank()) {
-                Object ownerObj = remote.get("owner");
-                if (ownerObj instanceof Map<?, ?> ownerMap && ownerMap.get("login") != null) {
-                    repo.setOwner(String.valueOf(ownerMap.get("login")));
-                }
-            }
-            saved.add(repositoryRepository.save(repo));
+            fromRemote(userId, repo, remote);
+            repo = repositoryRepository.save(repo);
+            saved.add(repo);
+            syncedIds.add(repo.getId());
         }
-    
+
+        // Union: keep manually added repos (e.g. public repos by URL) that the
+        // /user/repos sync doesn't return, so they never vanish on refresh.
+        for (Repository stored : repositoryRepository.findByUserIdOrderByFullNameAsc(userId)) {
+            if (!syncedIds.contains(stored.getId())) {
+                saved.add(stored);
+            }
+        }
+
          return saved.stream()
                 .sorted((a, b) -> a.getFullName().compareToIgnoreCase(b.getFullName()))
                 .map(this::toResponse)
                 .toList();
+    }
+
+    /**
+     * Add any visible repository (e.g. a public repo the user doesn't own) by
+     * owner/name. Idempotent: returns the existing row if already added.
+     */
+    @Transactional
+    public Repository addPublicRepo(UUID userId, String owner, String name) {
+        User user = userService.requiredById(userId);
+        String token = userService.decryptAccessToken(user);
+        Map<String, Object> remote;
+        try {
+            remote = gitHubApiClient.getRepository(token, owner, name);
+        } catch (HttpStatusCodeException ex) {
+            if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
+                throw new NotFoundException("Repository not found or not accessible");
+            }
+            throw ex;
+        }
+        if (remote == null || remote.get("id") == null) {
+            throw new NotFoundException("Repository not found or not accessible");
+        }
+        Long githubRepoId = toLong(remote.get("id"));
+        return repositoryRepository.findByUserIdAndGithubRepoId(userId, githubRepoId)
+                .orElseGet(() -> {
+                    Repository repo = new Repository();
+                    fromRemote(userId, repo, remote);
+                    return repositoryRepository.save(repo);
+                });
     }
 
     
@@ -124,5 +147,32 @@ public class RepoService {
             return number.longValue();
         }
         return Long.parseLong(String.valueOf(value));
+    }
+
+    /** Shared field mapping from a GitHub repo payload, used by both sync and by-url add. */
+    private static void fromRemote(UUID userId, Repository repo, Map<String, Object> remote) {
+        Long githubRepoId = toLong(remote.get("id"));
+        String fullName = String.valueOf(remote.get("full_name"));
+        String[] parts = fullName.split("/", 2);
+
+        repo.setUserId(userId);
+        repo.setGithubRepoId(githubRepoId);
+        repo.setOwner(parts.length > 0 ? parts[0] : String.valueOf(remote.get("owner")));
+        repo.setName(parts.length > 1 ? parts[1] : String.valueOf(remote.get("name")));
+        repo.setFullName(fullName);
+        repo.setPrivate(Boolean.TRUE.equals(remote.get("private")));
+        repo.setDefaultBranch(remote.get("default_branch") != null
+                ? String.valueOf(remote.get("default_branch"))
+                : "main");
+        repo.setLanguage(remote.get("language") != null ? String.valueOf(remote.get("language")) : null);
+        repo.setHtmlUrl(remote.get("html_url") != null ? String.valueOf(remote.get("html_url")) : null);
+        repo.setDescription(remote.get("description") != null ? String.valueOf(remote.get("description")) : null);
+        repo.setUpdatedAt(Instant.now());
+        if (repo.getOwner() == null || repo.getOwner().isBlank()) {
+            Object ownerObj = remote.get("owner");
+            if (ownerObj instanceof Map<?, ?> ownerMap && ownerMap.get("login") != null) {
+                repo.setOwner(String.valueOf(ownerMap.get("login")));
+            }
+        }
     }
 }
