@@ -126,6 +126,11 @@ export const api = {
 
   listRepos: (refresh = true) =>
     apiFetch<Repository[]>(`/api/repos?refresh=${refresh}`),
+  addPublicRepo: (owner: string, name: string) =>
+    apiFetch<Repository>("/api/repos/by-url", {
+      method: "POST",
+      body: JSON.stringify({ owner, name }),
+    }),
   getRepo: (id: string) => apiFetch<Repository>(`/api/repos/${id}`),
   startIndex: (id: string) =>
     apiFetch<Repository>(`/api/repos/${id}/index`, { method: "POST" }),

@@ -14,6 +14,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AddPublicRepo } from "@/components/dashboard/add-public-repo";
 import { ApiKeyBanner } from "@/components/api-key-banner";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { useRefreshRepos, useRepos } from "@/hooks/use-repos";
@@ -68,6 +69,7 @@ export function RepoDashboard() {
 
       <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
         {user && !user.aiKeySet && <ApiKeyBanner />}
+        <AddPublicRepo />
         {reposQuery.isLoading && (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (

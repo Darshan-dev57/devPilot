@@ -141,6 +141,32 @@ export function useResumeIndexing() {
   });
 }
 
+export function useAddPublicRepo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ owner, name }: { owner: string; name: string }) =>
+      api.addPublicRepo(owner, name),
+    onSuccess: (repo) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.repos.list(),
+      });
+      toast.add({
+        title: "Repository added",
+        description: `${repo.fullName} is ready to index.`,
+        type: "success",
+      });
+    },
+    onError: (error: Error) => {
+      toast.add({
+        title: "Could not add repository",
+        description: error.message,
+        type: "error",
+      });
+    },
+  });
+}
+
 export function useRefreshRepos() {
   const queryClient = useQueryClient();
 
