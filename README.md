@@ -1,10 +1,8 @@
 # DevPilot
 
-DevPilot is a GitHub-connected AI code assistant. Connect your GitHub account, pick a repository, index its code, and chat with it — answers stream back with file citations.
+DevPilot is a no-login AI code assistant. Paste any GitHub repository link, index it, and chat with it — answers stream back with file citations. No sign-up required.
 
-**Bring your own key:** each user picks OpenAI or Gemini once in
-Settings → AI provider key (stored encrypted, billed to them). The server operator
-needs no AI key, so the site can serve any number of users at zero AI cost.
+**Bring your own key:** each visitor picks OpenAI or Gemini and pastes their own key (stored in their browser's localStorage, never sent to our servers). The server operator needs no AI key, so the site can serve any number of users at zero AI cost.
 
 ## Deploy as a website
 

@@ -4,6 +4,10 @@ Oracle needs a card for verification, so this guide uses only providers whose
 free tier needs **no card**: Neon (Postgres + pgvector), Render (backend),
 Vercel (frontend). Total cost: $0.
 
+## Architecture
+
+No login required. Visitors paste a GitHub repo link → backend fetches files using a **server-side GitHub token** (you provide one free token) → index → chat. Each visitor brings their own AI key (OpenAI or Gemini), stored in their browser's localStorage and sent with each request via the `X-Api-Key` header.
+
 ## Path A (recommended): Neon + Render + Vercel
 
 Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
@@ -22,19 +26,19 @@ Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
    `jdbc:postgresql://<host>/<dbname>?sslmode=require`
    plus the username/password shown. Keep them handy.
 
-### 2. Backend — Render (10 min + first build)
+### 2. GitHub token (2 min)
+
+1. Go to github.com → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token.
+2. Select `repo` scope (for private repos) or just `public_repo` (for public repos only).
+3. Copy the token — you'll paste it into Render.
+
+### 3. Backend — Render (10 min + first build)
 
 1. Sign up at render.com (no card) → New → **Blueprint** → select your
    `devPilot` repo. Render reads `render.yaml` and creates `devpilot-backend`.
 2. Fill the `sync: false` variables in the dashboard:
    - `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` — from step 1.
-   - `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID/SECRET` —
-     see step 4 first (you need the backend URL, which you get after deploy).
-     Temporary: any placeholder to let the first build finish.
-   - `APP_FRONTEND_URL` / `APP_CORS_ALLOWED_ORIGINS` — your Vercel URL from
-     step 3 (placeholder first, real value after).
-   - `APP_TOKEN_ENCRYPTOR_PASSWORD` — `openssl rand -hex 32`
-   - `APP_TOKEN_ENCRYPTOR_SALT` — `openssl rand -hex 8`
+   - `APP_GITHUB_TOKEN` — from step 2.
 3. Deploy. First build takes ~8–10 min (Maven downloads). Health check:
    `https://<your-service>.onrender.com/actuator/health` → `{"status":"UP"}`.
 4. Note the backend URL: `https://<your-service>.onrender.com`.
@@ -42,23 +46,16 @@ Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
 > Heap is capped at 320 MB for the 512 MB free instance (`JAVA_TOOL_OPTIONS`
 > in `render.yaml`). Don't raise it without a paid instance.
 
-### 3. Frontend — Vercel (5 min)
+### 4. Frontend — Vercel (5 min)
 
 1. Sign up at vercel.com (no card) → Add New Project → import `devPilot`.
 2. Set **Root Directory** to `client`, keep the Next.js preset.
 3. Environment variable: `NEXT_PUBLIC_API_BASE_URL=https://<render-backend>.onrender.com`
 4. Deploy. Note the URL: `https://<your-app>.vercel.app`.
 
-### 4. Wire login + CORS (5 min)
+### 5. Use it
 
-1. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App:
-   - Homepage URL: `https://<vercel-app>.vercel.app`
-   - Callback: `https://<render-backend>.onrender.com/login/oauth2/code/github`
-2. Put the real client id/secret into Render env vars (step 2), and set both
-   `APP_FRONTEND_URL` and `APP_CORS_ALLOWED_ORIGINS` to the Vercel URL.
-   Render redeploys automatically.
-
-### 5. Keep it warm (optional, free)
+Open the Vercel URL → paste a GitHub repo link → add your AI key in Settings → Index → Chat. No login required.
 
 Free Render services sleep after 15 min idle; Spring Boot then takes ~60s to
 wake. A free UptimeRobot monitor (no card) pinging
