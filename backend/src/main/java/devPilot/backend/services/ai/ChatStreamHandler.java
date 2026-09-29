@@ -26,21 +26,12 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ChatStreamHandler {
 
-    private final ChatModel chatModel;
     private final ChatMessageRepository chatMessageRepository;
     private final CitationMapper citationMapper;
 
-    public SseEmitter stream(
-            UUID sessionId,
-            ChatMessageResponse savedUserMessage,
-            List<CitationDto> citations,
-            String systemPrompt,
-            String userPrompt) {
-        return stream(chatModel, sessionId, savedUserMessage, citations, systemPrompt, userPrompt);
-    }
-
     /**
-     * Stream using a caller-supplied model, e.g. a per-user BYOK model.
+     * Stream using a caller-supplied model, e.g. a per-request BYOK model.
+     * No ChatModel field — models are built per-request in AiModelFactory.
      */
     public SseEmitter stream(
             ChatModel model,
