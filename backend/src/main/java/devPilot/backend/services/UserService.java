@@ -56,6 +56,18 @@ public class UserService {
     }
 
     @Transactional
+    public User upsertFromGoogle(Long googleId, String email, String displayName, String avatarUrl) {
+        User user = userRepository.findByGithubId(googleId).orElseGet(User::new);
+        user.setGithubId(googleId);
+        user.setGithubUsername(email);
+        user.setDisplayName(displayName);
+        user.setAvatarUrl(avatarUrl);
+        user.setAccessToken("google-oauth-placeholder");
+        user.setTokenScopes("openid,email,profile");
+        return userRepository.save(user);
+    }
+
+    @Transactional
     public void saveAiKey(UUID id, AiProvider provider, String rawKey) {
         validateKeyFormat(provider, rawKey);
         User user = requiredById(id);

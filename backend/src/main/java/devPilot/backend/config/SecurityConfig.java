@@ -16,6 +16,7 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 
+import devPilot.backend.security.DelegatingOAuth2UserService;
 import devPilot.backend.security.GithubOAuth2UserService;
 import lombok.RequiredArgsConstructor;
 
@@ -24,7 +25,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final GithubOAuth2UserService gitHubOAuth2UserService;
+    private final DelegatingOAuth2UserService delegatingOAuth2UserService;
 
     @Bean
     SecurityFilterChain securityFilterChain(
@@ -50,7 +51,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .oauth2Login(oauth -> oauth
                         .userInfoEndpoint(userInfo -> userInfo
-                                .userService(gitHubOAuth2UserService))
+                                .userService(delegatingOAuth2UserService))
                         .successHandler(oauth2SuccessHandler)
                         .failureHandler(oauth2FailureHandler))
                 .logout(logout -> logout

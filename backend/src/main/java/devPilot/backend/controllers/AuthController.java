@@ -5,6 +5,7 @@ import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import devPilot.backend.dto.UserResponse;
@@ -24,8 +25,14 @@ public class AuthController {
     private final UserService userService;
 
     @GetMapping("/login-url")
-    public Map<String, String> loginUrl() {
-        return Map.of("url", "/oauth2/authorization/github");
+    public Map<String, String> loginUrl(@RequestParam(defaultValue = "github") String provider) {
+        if ("github".equalsIgnoreCase(provider)) {
+            return Map.of("provider", "github", "url", "/oauth2/authorization/github");
+        }
+        if ("google".equalsIgnoreCase(provider)) {
+            return Map.of("provider", "google", "url", "/oauth2/authorization/google");
+        }
+        return Map.of("provider", "github", "url", "/oauth2/authorization/github");
     }
 
 
