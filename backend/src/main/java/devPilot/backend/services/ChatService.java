@@ -100,18 +100,6 @@ public class ChatService {
         var userKey = aiKeyResolver.requireKey(apiKey);
         var userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
         var retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
-        if (retrievedContext.citations().isEmpty()
-                && "(no matching code chunks found)".equals(retrievedContext.contextText())) {
-            try {
-                var fallback = codeContextRetriever.retrieve(repo.getId(), userContent);
-                if (!fallback.citations().isEmpty()) {
-                    retrievedContext = fallback;
-                }
-            } catch (Exception ex) {
-                org.slf4j.LoggerFactory.getLogger(ChatService.class)
-                        .warn("Fallback retrieval failed for repo {}: {}", repo.getId(), ex.getMessage());
-            }
-        }
 
         String systemPrompt = chatPromptBuilder.systemPrompt(repo.getFullName());
         String userPrompt = chatPromptBuilder.userPrompt(retrievedContext.contextText(), userContent);

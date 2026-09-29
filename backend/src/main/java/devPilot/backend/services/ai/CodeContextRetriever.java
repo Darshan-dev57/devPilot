@@ -1,7 +1,5 @@
 package devPilot.backend.services.ai;
 
-import org.springframework.stereotype.Service;
-
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -9,6 +7,8 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.stereotype.Service;
+
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -16,15 +16,12 @@ import lombok.RequiredArgsConstructor;
 public class CodeContextRetriever {
     private static final String NO_MATCHES = "(no matching code chunks found)";
 
-    private final VectorStore vectorStore;
     private final CitationMapper citationMapper;
 
-    /** Retrieval with the default (server) vector store. */
-    public RetrievedContext retrieve(UUID repositoryId, String question) {
-        return retrieve(vectorStore, repositoryId, question);
-    }
-
-    /** Retrieval scoped to a caller-supplied store, e.g. a per-user BYOK store. */
+    /**
+     * Retrieval scoped to a caller-supplied store, e.g. a per-request BYOK store.
+     * No VectorStore field — stores are built per-request in AiModelFactory.
+     */
     public RetrievedContext retrieve(VectorStore store, UUID repositoryId, String question) {
         var filter = new FilterExpressionBuilder()
                 .eq(RagSettings.METADATA_REPO_ID, repositoryId.toString())
