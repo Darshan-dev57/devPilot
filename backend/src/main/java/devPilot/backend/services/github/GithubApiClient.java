@@ -6,6 +6,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
@@ -26,12 +27,15 @@ public class GithubApiClient {
 
     private final RestClient.Builder restClientBuilder;
 
-     public List<Map<String, Object>> listUserRepos(String accessToken) {
+    @Value("${app.github.token}")
+    private String serverToken;
+
+    public List<Map<String, Object>> listUserRepos() {
         List<Map<String, Object>> all = new ArrayList<>();
         int page = 1;
         while (page <= 10) {
             final int currentPage = page;
-            List<Map<String, Object>> pageRepos = client(accessToken)
+            List<Map<String, Object>> pageRepos = client()
                     .get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/user/repos")
@@ -54,28 +58,24 @@ public class GithubApiClient {
         return all;
     }
 
-      /**
-       * Fetch one repository's metadata. Works for any repo the token can see,
-       * including public repos the user doesn't own (their token quota applies).
-       */
-      public Map<String, Object> getRepository(String accessToken, String owner, String repo) {
-        return client(accessToken)
+    public Map<String, Object> getRepository(String owner, String repo) {
+        return client()
                 .get()
                 .uri("/repos/{owner}/{repo}", owner, repo)
                 .retrieve()
                 .body(MAP);
     }
 
-      public Map<String, Object> getRepoTree(String accessToken, String owner, String repo, String branch) {
-        return client(accessToken)
+    public Map<String, Object> getRepoTree(String owner, String repo, String branch) {
+        return client()
                 .get()
                 .uri("/repos/{owner}/{repo}/git/trees/{branch}?recursive=1", owner, repo, branch)
                 .retrieve()
                 .body(MAP);
     }
 
-       public String getFileContent(String accessToken, String owner, String repo, String path) {
-        Map<String, Object> body = client(accessToken)
+    public String getFileContent(String owner, String repo, String path) {
+        Map<String, Object> body = client()
                 .get()
                 .uri("/repos/{owner}/{repo}/contents/{path}", owner, repo, path)
                 .retrieve()
@@ -94,11 +94,11 @@ public class GithubApiClient {
         }
         return String.valueOf(content);
     }
-    
-    private RestClient client(String accessToken){
-          return restClientBuilder
+
+    private RestClient client() {
+        return restClientBuilder
                 .baseUrl(API_BASE)
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + serverToken)
                 .defaultHeader(HttpHeaders.ACCEPT, "application/vnd.github+json")
                 .defaultHeader("X-GitHub-Api-Version", "2022-11-28")
                 .defaultHeader(HttpHeaders.USER_AGENT, "DevPilot")

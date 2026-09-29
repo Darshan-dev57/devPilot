@@ -72,25 +72,23 @@ public class AiModelFactory {
 
     private final HttpClient httpClient = SpringAiOpenAiHttpClient.builder().build();
 
-    public ChatModel chatModel(UUID userId, AiProvider provider, String apiKey) {
+    public ChatModel chatModel(AiProvider provider, String apiKey) {
         return chatModels.computeIfAbsent(
-                cacheKey(userId, provider, apiKey), k -> buildChatModel(provider, apiKey));
+                cacheKey(provider, apiKey), k -> buildChatModel(provider, apiKey));
     }
 
-    public VectorStore vectorStore(UUID userId, AiProvider provider, String apiKey) {
+    public VectorStore vectorStore(AiProvider provider, String apiKey) {
         return vectorStores.computeIfAbsent(
-                cacheKey(userId, provider, apiKey), k -> buildVectorStore(provider, apiKey));
+                cacheKey(provider, apiKey), k -> buildVectorStore(provider, apiKey));
     }
 
-    /** Drop cached clients, e.g. after the user changes or removes their key. */
-    public void evict(UUID userId) {
-        String prefix = userId + ":";
-        chatModels.keySet().removeIf(k -> k.startsWith(prefix));
-        vectorStores.keySet().removeIf(k -> k.startsWith(prefix));
+    public void evict() {
+        chatModels.clear();
+        vectorStores.clear();
     }
 
-    private static String cacheKey(UUID userId, AiProvider provider, String apiKey) {
-        return userId + ":" + provider + ":" + apiKey.hashCode();
+    private static String cacheKey(AiProvider provider, String apiKey) {
+        return provider + ":" + apiKey.hashCode();
     }
 
     private OpenAIClient client(String baseUrl, String apiKey) {

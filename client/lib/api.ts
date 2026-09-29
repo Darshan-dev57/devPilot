@@ -2,16 +2,6 @@ export type IndexStatus = "PENDING" | "INDEXING" | "PAUSED" | "READY" | "FAILED"
 
 export type AiProvider = "openai" | "gemini";
 
-export type User = {
-  id: string;
-  githubId: number;
-  githubUsername: string;
-  displayName: string;
-  avatarUrl: string | null;
-  aiKeySet: boolean;
-  aiProvider: AiProvider;
-};
-
 export type Repository = {
   id: string;
   githubRepoId: number;
@@ -63,6 +53,31 @@ export type ChatMessage = {
   createdAt: string;
 };
 
+const AI_KEY_STORAGE_KEY = "devpilot_ai_key";
+const AI_PROVIDER_STORAGE_KEY = "devpilot_ai_provider";
+
+export function getStoredApiKey(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(AI_KEY_STORAGE_KEY) ?? "";
+}
+
+export function getStoredProvider(): AiProvider {
+  if (typeof window === "undefined") return "openai";
+  const stored = localStorage.getItem(AI_PROVIDER_STORAGE_KEY);
+  return stored === "gemini" ? "gemini" : "openai";
+}
+
+export function saveApiKeyToStorage(provider: AiProvider, key: string) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AI_KEY_STORAGE_KEY, key);
+  localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider);
+}
+
+export function clearApiKeyFromStorage() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(AI_KEY_STORAGE_KEY);
+  localStorage.removeItem(AI_PROVIDER_STORAGE_KEY);
+}
 
 export class ApiError extends Error {
   status: number;
@@ -74,14 +89,8 @@ export class ApiError extends Error {
 }
 
 export function getApiBaseUrl() {
-  // Empty string means same-origin (production behind reverse proxy).
-  // Only fall back to localhost when the variable is not set at all (local dev).
   const configured = process.env.NEXT_PUBLIC_API_BASE_URL;
   return configured === undefined ? "http://localhost:8080" : configured;
-}
-
-export function getGithubLoginUrl() {
-  return `${getApiBaseUrl()}/oauth2/authorization/github`;
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -97,13 +106,18 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const apiKey = getStoredApiKey();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (apiKey) {
+    headers["X-Api-Key"] = apiKey;
+  }
+
   const res = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -118,12 +132,6 @@ export async function apiFetch<T>(
 }
 
 export const api = {
-  me: () => apiFetch<User>("/api/auth/me"),
-  logout: () =>
-    apiFetch<void>("/api/auth/logout", {
-      method: "POST",
-    }),
-
   listRepos: (refresh = true) =>
     apiFetch<Repository[]>(`/api/repos?refresh=${refresh}`),
   addPublicRepo: (owner: string, name: string) =>
@@ -140,7 +148,7 @@ export const api = {
     apiFetch<Repository>(`/api/repos/${id}/resume-index`, { method: "POST" }),
   indexStatus: (id: string) =>
     apiFetch<IndexStatusResponse>(`/api/repos/${id}/status`),
-   createSession: (repositoryId: string, title?: string) =>
+  createSession: (repositoryId: string, title?: string) =>
     apiFetch<ChatSession>("/api/chat/sessions", {
       method: "POST",
       body: JSON.stringify({ repositoryId, title }),
@@ -151,13 +159,4 @@ export const api = {
     ),
   getMessages: (sessionId: string) =>
     apiFetch<ChatMessage[]>(`/api/chat/sessions/${sessionId}`),
-  saveAiKey: (provider: AiProvider, apiKey: string) =>
-    apiFetch<{ aiKeySet: boolean; aiProvider: AiProvider }>("/api/users/me/ai-key", {
-      method: "PUT",
-      body: JSON.stringify({ provider, apiKey }),
-    }),
-  deleteAiKey: () =>
-    apiFetch<{ aiKeySet: boolean }>("/api/users/me/ai-key", {
-      method: "DELETE",
-    }),
 };

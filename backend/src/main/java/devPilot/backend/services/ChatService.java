@@ -19,21 +19,14 @@ import devPilot.backend.exceptions.BadRequestException;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.ChatMessageRepository;
 import devPilot.backend.repository.ChatSessionRepository;
+import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.ai.AiModelFactory;
 import devPilot.backend.services.ai.ChatPromptBuilder;
 import devPilot.backend.services.ai.ChatStreamHandler;
 import devPilot.backend.services.ai.CitationMapper;
 import devPilot.backend.services.ai.CodeContextRetriever;
-import devPilot.backend.services.ai.AiKeyResolver;
-import devPilot.backend.services.ai.AiModelFactory;
 import lombok.RequiredArgsConstructor;
 
-/**
- * Chat sessions and the RAG chat pipeline entry point.
- *
- * <p>{@link #streamReply} orchestrates the full flow:
- * validate → save user message → retrieve code context → build prompts → stream AI reply.
- * Each step is implemented in a dedicated class under {@code service.ai}.
- */
 @Service
 @RequiredArgsConstructor
 public class ChatService {
@@ -49,9 +42,8 @@ public class ChatService {
     private final AiModelFactory aiModelFactory;
 
     @Transactional
-    public ChatSessionResponse createSession(UUID userId, CreateChatSessionRequest request) {
-        aiKeyResolver.requireKey(userId);
-        Repository repo = repoService.requireOwned(request.repositoryId(), userId);
+    public ChatSessionResponse createSession(CreateChatSessionRequest request) {
+        Repository repo = repoService.requireOwned(request.repositoryId());
         if (repo.getIndexStatus() != IndexStatus.READY) {
             throw new BadRequestException("Repository must be indexed before chatting");
         }
@@ -61,7 +53,6 @@ public class ChatService {
                 : "Chat with " + repo.getFullName();
 
         ChatSession session = ChatSession.builder()
-                .userId(userId)
                 .repositoryId(repo.getId())
                 .title(title)
                 .build();
@@ -70,51 +61,45 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChatSessionResponse> listSessions(UUID userId, UUID repositoryId) {
-        repoService.requireOwned(repositoryId, userId);
+    public List<ChatSessionResponse> listSessions(UUID repositoryId) {
+        repoService.requireOwned(repositoryId);
         return chatSessionRepository
-                .findByUserIdAndRepositoryIdOrderByCreatedAtDesc(userId, repositoryId)
+                .findByRepositoryIdOrderByCreatedAtDesc(repositoryId)
                 .stream()
                 .map(this::toSessionResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<ChatMessageResponse> getMessages(UUID userId, UUID sessionId) {
-        ChatSession session = requireSession(userId, sessionId);
+    public List<ChatMessageResponse> getMessages(UUID sessionId) {
+        ChatSession session = requireSession(sessionId);
         return chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId()).stream()
                 .map(this::toMessageResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public ChatSession requireSession(UUID userId, UUID sessionId) {
-        return chatSessionRepository.findByIdAndUserId(sessionId, userId)
+    public ChatSession requireSession(UUID sessionId) {
+        return chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new NotFoundException("Chat session not found"));
     }
 
-    public SseEmitter streamReply(UUID userId, UUID sessionId, String userContent) {
-        // 1. Ensure the session exists and the repo is indexed
-        ChatSession session = requireSession(userId, sessionId);
-        Repository repo = repoService.requireOwned(session.getRepositoryId(), userId);
+    public SseEmitter streamReply(UUID sessionId, String userContent, String apiKey) {
+        ChatSession session = requireSession(sessionId);
+        Repository repo = repoService.requireOwned(session.getRepositoryId());
         if (repo.getIndexStatus() != IndexStatus.READY) {
             throw new BadRequestException("Repository is not ready for chat");
         }
 
-        // 2. Persist the user's message
         ChatMessage userMessage = chatMessageRepository.save(ChatMessage.builder()
                 .sessionId(session.getId())
                 .role(MessageRole.USER)
                 .content(userContent)
                 .build());
 
-        // 3. RAG retrieval with the user's own key + provider
-        var userKey = aiKeyResolver.requireKey(userId);
-        var userVectorStore = aiModelFactory.vectorStore(
-                userId, userKey.provider(), userKey.apiKey());
+        var userKey = aiKeyResolver.requireKey(apiKey);
+        var userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
         var retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
-        // If this repo was indexed under the other provider, its vectors live in the other table.
-        // Fall back to the legacy shared table so older indexed repos keep responding after the provider split.
         if (retrievedContext.citations().isEmpty()
                 && "(no matching code chunks found)".equals(retrievedContext.contextText())) {
             try {
@@ -123,19 +108,16 @@ public class ChatService {
                     retrievedContext = fallback;
                 }
             } catch (Exception ex) {
-                // fallback is best-effort; keep the original empty context if it fails
                 org.slf4j.LoggerFactory.getLogger(ChatService.class)
                         .warn("Fallback retrieval failed for repo {}: {}", repo.getId(), ex.getMessage());
             }
         }
 
-        // 4. Build LLM prompts from retrieved context + question
         String systemPrompt = chatPromptBuilder.systemPrompt(repo.getFullName());
         String userPrompt = chatPromptBuilder.userPrompt(retrievedContext.contextText(), userContent);
 
-        // 5. Stream the reply with the user's own key + provider (SSE)
         return chatStreamHandler.stream(
-                aiModelFactory.chatModel(userId, userKey.provider(), userKey.apiKey()),
+                aiModelFactory.chatModel(userKey.provider(), userKey.apiKey()),
                 session.getId(),
                 toMessageResponse(userMessage),
                 retrievedContext.citations(),

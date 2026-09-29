@@ -16,7 +16,6 @@ import org.springframework.web.client.HttpStatusCodeException;
 import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
 import devPilot.backend.entity.Repository;
-import devPilot.backend.entity.User;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.RepositoryRepository;
 import devPilot.backend.services.github.GithubApiClient;
@@ -27,55 +26,44 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RepoService {
     private final RepositoryRepository repositoryRepository;
-    private final UserService userService;
     private final GithubApiClient gitHubApiClient;
 
     @Transactional
-    public List<RepositoryResponse> syncAndListRepos(UUID userId) {
-        User user = userService.requiredById(userId);
-        String token = userService.decryptAccessToken(user);
-        List<Map<String, Object>> remoteRepos = gitHubApiClient.listUserRepos(token);
+    public List<RepositoryResponse> syncAndListRepos() {
+        List<Map<String, Object>> remoteRepos = gitHubApiClient.listUserRepos();
 
         List<Repository> saved = new ArrayList<>();
         Set<UUID> syncedIds = new HashSet<>();
 
-          for (Map<String, Object> remote : remoteRepos) {
+        for (Map<String, Object> remote : remoteRepos) {
             Long githubRepoId = toLong(remote.get("id"));
             Repository repo = repositoryRepository
-                    .findByUserIdAndGithubRepoId(userId, githubRepoId)
+                    .findByGithubRepoId(githubRepoId)
                     .orElseGet(Repository::new);
 
-            fromRemote(userId, repo, remote);
+            fromRemote(repo, remote);
             repo = repositoryRepository.save(repo);
             saved.add(repo);
             syncedIds.add(repo.getId());
         }
 
-        // Union: keep manually added repos (e.g. public repos by URL) that the
-        // /user/repos sync doesn't return, so they never vanish on refresh.
-        for (Repository stored : repositoryRepository.findByUserIdOrderByFullNameAsc(userId)) {
+        for (Repository stored : repositoryRepository.findAll()) {
             if (!syncedIds.contains(stored.getId())) {
                 saved.add(stored);
             }
         }
 
-         return saved.stream()
+        return saved.stream()
                 .sorted((a, b) -> a.getFullName().compareToIgnoreCase(b.getFullName()))
                 .map(this::toResponse)
                 .toList();
     }
 
-    /**
-     * Add any visible repository (e.g. a public repo the user doesn't own) by
-     * owner/name. Idempotent: returns the existing row if already added.
-     */
     @Transactional
-    public Repository addPublicRepo(UUID userId, String owner, String name) {
-        User user = userService.requiredById(userId);
-        String token = userService.decryptAccessToken(user);
+    public Repository addPublicRepo(String owner, String name) {
         Map<String, Object> remote;
         try {
-            remote = gitHubApiClient.getRepository(token, owner, name);
+            remote = gitHubApiClient.getRepository(owner, name);
         } catch (HttpStatusCodeException ex) {
             if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
                 throw new NotFoundException("Repository not found or not accessible");
@@ -86,32 +74,30 @@ public class RepoService {
             throw new NotFoundException("Repository not found or not accessible");
         }
         Long githubRepoId = toLong(remote.get("id"));
-        return repositoryRepository.findByUserIdAndGithubRepoId(userId, githubRepoId)
+        return repositoryRepository.findByGithubRepoId(githubRepoId)
                 .orElseGet(() -> {
                     Repository repo = new Repository();
-                    fromRemote(userId, repo, remote);
+                    fromRemote(repo, remote);
                     return repositoryRepository.save(repo);
                 });
     }
 
-    
     @Transactional(readOnly = true)
-    public List<RepositoryResponse> listStored(UUID userId) {
-        return repositoryRepository.findByUserIdOrderByFullNameAsc(userId).stream()
+    public List<RepositoryResponse> listStored() {
+        return repositoryRepository.findAll().stream()
                 .map(this::toResponse)
                 .toList();
     }
-    
+
     @Transactional(readOnly = true)
-    public Repository requireOwned(UUID repoId, UUID userId) {
-        return repositoryRepository.findByIdAndUserId(repoId, userId)
+    public Repository requireOwned(UUID repoId) {
+        return repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
     }
 
-    
     @Transactional(readOnly = true)
-    public IndexStatusResponse status(UUID repoId, UUID userId) {
-        Repository repo = requireOwned(repoId, userId);
+    public IndexStatusResponse status(UUID repoId) {
+        Repository repo = requireOwned(repoId);
         return new IndexStatusResponse(
                 repo.getId(),
                 repo.getIndexStatus(),
@@ -122,7 +108,7 @@ public class RepoService {
                 repo.getErrorMessage());
     }
 
-     public RepositoryResponse toResponse(Repository repo) {
+    public RepositoryResponse toResponse(Repository repo) {
         return new RepositoryResponse(
                 repo.getId(),
                 repo.getGithubRepoId(),
@@ -149,13 +135,11 @@ public class RepoService {
         return Long.parseLong(String.valueOf(value));
     }
 
-    /** Shared field mapping from a GitHub repo payload, used by both sync and by-url add. */
-    private static void fromRemote(UUID userId, Repository repo, Map<String, Object> remote) {
+    private static void fromRemote(Repository repo, Map<String, Object> remote) {
         Long githubRepoId = toLong(remote.get("id"));
         String fullName = String.valueOf(remote.get("full_name"));
         String[] parts = fullName.split("/", 2);
 
-        repo.setUserId(userId);
         repo.setGithubRepoId(githubRepoId);
         repo.setOwner(parts.length > 0 ? parts[0] : String.valueOf(remote.get("owner")));
         repo.setName(parts.length > 1 ? parts[1] : String.valueOf(remote.get("name")));

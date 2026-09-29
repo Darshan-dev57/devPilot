@@ -33,7 +33,7 @@ class AiModelFactoryTest {
 
     @Test
     void buildsOpenAiChatModelForUserKey() {
-        ChatModel model = factory.chatModel(UUID.randomUUID(), AiProvider.OPENAI, "sk-test-dummy-key");
+        ChatModel model = factory.chatModel(AiProvider.OPENAI, "sk-test-dummy-key");
 
         assertNotNull(model);
         assertEquals("gpt-4o-mini", model.getDefaultOptions().getModel());
@@ -41,7 +41,7 @@ class AiModelFactoryTest {
 
     @Test
     void buildsGeminiChatModelForUserKey() {
-        ChatModel model = factory.chatModel(UUID.randomUUID(), AiProvider.GEMINI, "AIza-test-dummy-key");
+        ChatModel model = factory.chatModel(AiProvider.GEMINI, "AIza-test-dummy-key");
 
         assertNotNull(model);
         assertEquals("gemini-3.8-flash", model.getDefaultOptions().getModel());

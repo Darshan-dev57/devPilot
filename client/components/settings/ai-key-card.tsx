@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, KeyRound, Loader2, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +14,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCurrentUser } from "@/hooks/use-auth";
-import { api, ApiError, type AiProvider } from "@/lib/api";
-import { queryKeys } from "@/lib/query-keys";
+import {
+  clearApiKeyFromStorage,
+  getStoredApiKey,
+  getStoredProvider,
+  saveApiKeyToStorage,
+  type AiProvider,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const PROVIDERS: { id: AiProvider; label: string; hint: string }[] = [
@@ -34,56 +37,48 @@ const PROVIDERS: { id: AiProvider; label: string; hint: string }[] = [
 ];
 
 export function AiKeyCard() {
-  const queryClient = useQueryClient();
-  const { data: user } = useCurrentUser();
-  const [provider, setProvider] = useState<AiProvider>(
-    user?.aiProvider ?? "openai"
-  );
+  const [provider, setProvider] = useState<AiProvider>(getStoredProvider());
   const [keyInput, setKeyInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
-  const refreshUser = () =>
-    queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+  const configured = getStoredApiKey().length > 0;
+  const activeProvider = configured ? getStoredProvider() : provider;
+  const switchingProvider = configured && provider !== getStoredProvider();
 
-  const save = useMutation({
-    mutationFn: ({ p, apiKey }: { p: AiProvider; apiKey: string }) =>
-      api.saveAiKey(p, apiKey),
-    onSuccess: async () => {
-      setKeyInput("");
-      setError(null);
-      await refreshUser();
-    },
-    onError: (err) => {
-      setError(
-        err instanceof ApiError ? err.message : "Could not save the key"
-      );
-    },
-  });
+  function save() {
+    const key = keyInput.trim();
+    if (!key) {
+      setError("Enter an API key first");
+      return;
+    }
+    if (provider === "openai" && !key.startsWith("sk-")) {
+      setError("OpenAI API key must start with sk-");
+      return;
+    }
+    if (provider === "gemini" && key.length < 10) {
+      setError("That Gemini API key looks too short");
+      return;
+    }
+    saveApiKeyToStorage(provider, key);
+    setKeyInput("");
+    setError(null);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
 
-  const remove = useMutation({
-    mutationFn: () => api.deleteAiKey(),
-    onSuccess: async () => {
-      setError(null);
-      await refreshUser();
-    },
-    onError: (err) => {
-      setError(
-        err instanceof ApiError ? err.message : "Could not remove the key"
-      );
-    },
-  });
-
-  const configured = user?.aiKeySet ?? false;
-  const activeProvider = user?.aiProvider ?? provider;
-  const switchingProvider = configured && provider !== user?.aiProvider;
+  function remove() {
+    clearApiKeyFromStorage();
+    setError(null);
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>AI provider key</CardTitle>
         <CardDescription>
-          Pick OpenAI or Gemini and paste your own key. It is stored encrypted
-          and only used for your indexing and chat. You pay your provider
+          Pick OpenAI or Gemini and paste your own key. It is stored in your
+          browser only — never sent to our servers. You pay your provider
           directly based on your usage.
         </CardDescription>
       </CardHeader>
@@ -106,7 +101,7 @@ export function AiKeyCard() {
             >
               <span className="flex items-center gap-2 font-medium">
                 {p.label}
-                {configured && user?.aiProvider === p.id && (
+                {configured && getStoredProvider() === p.id && (
                   <Badge variant="secondary" className="gap-1">
                     <CheckCircle2 className="size-3" />
                     Active
@@ -141,13 +136,18 @@ export function AiKeyCard() {
         </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {saved && (
+          <p className="text-sm text-green-600 dark:text-green-400">
+            Key saved in this browser.
+          </p>
+        )}
 
         <div className="flex flex-col gap-3 sm:flex-row">
           <Button
-            onClick={() => save.mutate({ p: provider, apiKey: keyInput.trim() })}
-            disabled={save.isPending || keyInput.trim().length === 0}
+            onClick={save}
+            disabled={keyInput.trim().length === 0}
           >
-            {save.isPending && (
+            {saved && (
               <Loader2 data-icon="inline-start" className="animate-spin" />
             )}
             Save key
@@ -155,14 +155,9 @@ export function AiKeyCard() {
           {configured && (
             <Button
               variant="outline"
-              onClick={() => remove.mutate()}
-              disabled={remove.isPending}
+              onClick={remove}
             >
-              {remove.isPending ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Trash2 data-icon="inline-start" />
-              )}
+              <Trash2 data-icon="inline-start" />
               Remove key
             </Button>
           )}

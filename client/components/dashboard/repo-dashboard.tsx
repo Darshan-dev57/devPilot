@@ -16,8 +16,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddPublicRepo } from "@/components/dashboard/add-public-repo";
 import { ApiKeyBanner } from "@/components/api-key-banner";
-import { useCurrentUser } from "@/hooks/use-auth";
 import { useRefreshRepos, useRepos } from "@/hooks/use-repos";
+import { getStoredApiKey } from "@/lib/api";
 import type { IndexStatus } from "@/lib/api";
 
 type FilterStatus = "ALL" | IndexStatus;
@@ -25,7 +25,7 @@ type FilterStatus = "ALL" | IndexStatus;
 export function RepoDashboard() {
   const reposQuery = useRepos();
   const refresh = useRefreshRepos();
-  const { data: user } = useCurrentUser();
+  const hasKey = getStoredApiKey().length > 0;
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<FilterStatus>("ALL");
   const [visibility, setVisibility] = useState<"all" | "public" | "private">(
@@ -68,7 +68,7 @@ export function RepoDashboard() {
       />
 
       <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-        {user && !user.aiKeySet && <ApiKeyBanner />}
+        {!hasKey && <ApiKeyBanner />}
         <AddPublicRepo />
         {reposQuery.isLoading && (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

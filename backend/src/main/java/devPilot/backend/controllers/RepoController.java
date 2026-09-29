@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,7 +18,6 @@ import devPilot.backend.dto.AddPublicRepoRequest;
 import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
 import devPilot.backend.entity.Repository;
-import devPilot.backend.security.CurrentUser;
 import devPilot.backend.services.RepoService;
 import devPilot.backend.services.indexing.IndexingService;
 import jakarta.validation.Valid;
@@ -28,74 +28,56 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RepoController {
 
-    private final CurrentUser currentUser;
     private final RepoService repoService;
-
     private final IndexingService indexingService;
 
     @GetMapping
     public List<RepositoryResponse> list(
             @RequestParam(name = "refresh", defaultValue = "true") boolean refresh) {
-        UUID userId = currentUser.require().getId();
         if (refresh) {
-            return repoService.syncAndListRepos(userId);
+            return repoService.syncAndListRepos();
         }
-        return repoService.listStored(userId);
+        return repoService.listStored();
     }
 
     @GetMapping("/{id}")
     public RepositoryResponse get(@PathVariable UUID id) {
-        UUID userId = currentUser.require().getId();
-        return repoService.toResponse(repoService.requireOwned(id, userId));
+        return repoService.toResponse(repoService.requireOwned(id));
     }
 
-    /**
-     * Add any visible repository (e.g. a public repo the user doesn't own) by
-     * owner/name. Idempotent: 200 with the existing row if already added.
-     */
     @PostMapping("/by-url")
     public ResponseEntity<RepositoryResponse> addByUrl(
             @Valid @RequestBody AddPublicRepoRequest request) {
-        UUID userId = currentUser.require().getId();
-        Repository repo = repoService.addPublicRepo(
-                userId, request.owner().trim(), request.name().trim());
+        Repository repo = repoService.addPublicRepo(request.owner().trim(), request.name().trim());
         return ResponseEntity.ok(repoService.toResponse(repo));
     }
 
     @PostMapping("/{id}/index")
-    public ResponseEntity<RepositoryResponse> index(@PathVariable UUID id) {
-        UUID userId = currentUser.require().getId();
-        Repository repo = indexingService.startIndexing(id, userId);
-        indexingService.indexAsync(id, userId);
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
-    }
-
-    @PostMapping("/{id}/cancel-index")
-    public ResponseEntity<RepositoryResponse> cancelIndex(@PathVariable UUID id) {
-        UUID userId = currentUser.require().getId();
-        Repository repo = indexingService.pauseIndexing(id, userId);
+    public ResponseEntity<RepositoryResponse> index(
+            @PathVariable UUID id,
+            @RequestHeader("X-Api-Key") String apiKey) {
+        Repository repo = indexingService.startIndexing(id, apiKey);
+        indexingService.indexAsync(id, apiKey);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
     @PostMapping("/{id}/pause-index")
     public ResponseEntity<RepositoryResponse> pauseIndex(@PathVariable UUID id) {
-        UUID userId = currentUser.require().getId();
-        Repository repo = indexingService.pauseIndexing(id, userId);
+        Repository repo = indexingService.pauseIndexing(id);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
     @PostMapping("/{id}/resume-index")
-    public ResponseEntity<RepositoryResponse> resumeIndex(@PathVariable UUID id) {
-        UUID userId = currentUser.require().getId();
-        Repository repo = indexingService.resumeIndexing(id, userId);
-        indexingService.resumeAsync(id, userId);
+    public ResponseEntity<RepositoryResponse> resumeIndex(
+            @PathVariable UUID id,
+            @RequestHeader("X-Api-Key") String apiKey) {
+        Repository repo = indexingService.resumeIndexing(id, apiKey);
+        indexingService.resumeAsync(id, apiKey);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
     @GetMapping("/{id}/status")
     public IndexStatusResponse status(@PathVariable UUID id) {
-        UUID userId = currentUser.require().getId();
-        return repoService.status(id, userId);
+        return repoService.status(id);
     }
-
 }

@@ -2,8 +2,7 @@
 
 import { use } from "react";
 
-import {ChatView}  from "@/components/chat/chat-view";
-import { RequireAuth } from "@/components/providers/require-auth";
+import {ChatView } from "@/components/chat/chat-view";
 
 export default function ChatPage({
   params,
@@ -12,9 +11,5 @@ export default function ChatPage({
 }) {
   const { repoId } = use(params);
 
-  return (
-    <RequireAuth>
-      <ChatView repoId={repoId} />
-    </RequireAuth>
-  );
+  return <ChatView repoId={repoId} />;
 }

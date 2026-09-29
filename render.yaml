@@ -55,6 +55,8 @@ services:
         value: none
       - key: SERVER_SERVLET_SESSION_COOKIE_SECURE
         value: "true"
-      # Placeholder on purpose: every user brings their own key in Settings.
-      - key: SPRING_AI_OPENAI_API_KEY
-        value: sk-byok-mode-placeholder
+      # Server-side GitHub token for fetching repo data (no user accounts).
+      # Create one free at github.com/settings/tokens (classic, repo scope).
+      - key: APP_GITHUB_TOKEN
+        value: paste-your-github-token-here
+        sync: false

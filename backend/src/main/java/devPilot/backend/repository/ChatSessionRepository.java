@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import devPilot.backend.entity.ChatSession;
 
 public interface ChatSessionRepository extends JpaRepository<ChatSession, UUID> {
-    List<ChatSession> findByUserIdAndRepositoryIdOrderByCreatedAtDesc(UUID userId, UUID repositoryId);
+    List<ChatSession> findByRepositoryIdOrderByCreatedAtDesc(UUID repositoryId);
 
-    Optional<ChatSession> findByIdAndUserId(UUID id, UUID userId);
+    Optional<ChatSession> findById(UUID id);
 }

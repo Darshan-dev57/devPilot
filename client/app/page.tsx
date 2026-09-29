@@ -7,7 +7,6 @@ import { ModeToggle } from "@/components/ui/mode-toggle";
 import { buttonVariants } from "@/components/ui/button";
 
 import { cn } from "@/lib/utils";
-import { getGithubLoginUrl } from "@/lib/api";
 
 export default function HomePage() {
   return (
@@ -18,10 +17,10 @@ export default function HomePage() {
         <div className="flex items-center gap-2">
           <ModeToggle />
           <Link
-            href="/login"
+            href="/dashboard"
             className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
           >
-            Sign in
+            Open app
           </Link>
         </div>
       </header>
@@ -36,27 +35,22 @@ export default function HomePage() {
               DevPilot
             </h1>
             <p className="text-lg text-muted-foreground text-balance">
-              Connect GitHub, index any repository, and chat with your codebase
-              using retrieval-augmented answers and citations.
+              Paste any GitHub repository link, index it, and chat with your
+              codebase using retrieval-augmented answers and citations. No
+              sign-up required.
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <a
-              href={getGithubLoginUrl()}
+            <Link
+              href="/dashboard"
               className={cn(
                 buttonVariants({ size: "lg" }),
                 "inline-flex items-center gap-1.5"
               )}
             >
               <FolderGit2 className="size-4" />
-              Continue with GitHub
+              Start chatting
               <ArrowRight className="size-4" />
-            </a>
-            <Link
-              href="/login"
-              className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
-            >
-              See how it works
             </Link>
           </div>
         </section>
@@ -64,13 +58,13 @@ export default function HomePage() {
         <section className="grid gap-4 md:grid-cols-3">
           {[
             {
-              title: "Connect GitHub",
-              body: "OAuth with repo scope for public and private repositories.",
+              title: "Paste any repo",
+              body: "Public or private — just paste a GitHub URL. No account needed.",
               icon: FolderGit2,
             },
             {
               title: "Index with RAG",
-              body: "Chunk and embed your code into Postgres + pgvector.",
+              body: "Chunk and embed code into Postgres + pgvector using your own AI key.",
               icon: Sparkles,
             },
             {

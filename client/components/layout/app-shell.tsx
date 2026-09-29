@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Settings } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Settings } from "lucide-react";
 
 import { DevPilotIcon } from "@/components/icons/devpilot-icon";
 
 import { ModeToggle } from "@/components/ui/mode-toggle";
-import { useCurrentUser, useLogout } from "@/hooks/use-auth";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -55,9 +53,6 @@ export function AppShell({
   hideHeader?: boolean;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { data: user } = useCurrentUser();
-  const logout = useLogout();
 
   return (
     <SidebarProvider>
@@ -122,21 +117,13 @@ export function AppShell({
                     />
                   }
                 >
-                  <Avatar className="size-8 rounded-lg">
-                    <AvatarImage
-                      src={user?.avatarUrl ?? undefined}
-                      alt={user?.displayName}
-                    />
-                    <AvatarFallback className="rounded-lg">
-                      {(user?.displayName ?? "DP").slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="grid size-8 place-items-center rounded-lg bg-muted text-sm font-medium">
+                    DP
+                  </div>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">
-                      {user?.displayName}
-                    </span>
+                    <span className="truncate font-medium">Guest</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      @{user?.githubUsername}
+                      No account needed
                     </span>
                   </div>
                 </DropdownMenuTrigger>
@@ -149,27 +136,19 @@ export function AppShell({
                   <DropdownMenuGroup>
                     <DropdownMenuLabel className="font-normal">
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm font-medium">
-                          {user?.displayName}
-                        </span>
+                        <span className="text-sm font-medium">Guest session</span>
                         <span className="text-xs text-muted-foreground">
-                          Connected via GitHub
+                          Your AI key is stored in this browser only
                         </span>
                       </div>
                     </DropdownMenuLabel>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
+                  <DropdownMenuItem
+                    render={<Link href="/dashboard/settings" />}
+                  >
                     <Settings />
                     Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => logout.mutate()}
-                    disabled={logout.isPending}
-                  >
-                    <LogOut />
-                    Log out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

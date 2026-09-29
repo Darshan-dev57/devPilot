@@ -20,7 +20,6 @@ import devPilot.backend.entity.Repository;
 import devPilot.backend.exceptions.BadRequestException;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.RepositoryRepository;
-import devPilot.backend.services.UserService;
 import devPilot.backend.services.ai.AiKeyResolver;
 import devPilot.backend.services.ai.AiModelFactory;
 import devPilot.backend.services.ai.RagSettings;
@@ -38,7 +37,6 @@ public class IndexingService {
     private static final int PROGRESS_EVERY_N_FILES = 5;
 
     private final RepositoryRepository repositoryRepository;
-    private final UserService userService;
     private final GithubApiClient gitHubApiClient;
     private final CodeFileFilter fileFilter;
     private final CodeChunker codeChunker;
@@ -51,9 +49,9 @@ public class IndexingService {
     @Value("${app.indexing.max-file-bytes:102400}")
     private long maxFileBytes;
 
-    public Repository startIndexing(UUID repoId, UUID userId) {
-        aiKeyResolver.requireKey(userId);
-        Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
+    public Repository startIndexing(UUID repoId, String apiKey) {
+        aiKeyResolver.requireKey(apiKey);
+        Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
 
         if (repo.getIndexStatus() == IndexStatus.INDEXING) {
@@ -74,18 +72,18 @@ public class IndexingService {
     }
 
     @Async("indexingExecutor")
-     public void indexAsync(UUID repoId, UUID userId) {
-        doIndexAsync(repoId, userId, false);
+     public void indexAsync(UUID repoId, String apiKey) {
+        doIndexAsync(repoId, apiKey, false);
     }
 
     @Async("indexingExecutor")
-    public void resumeAsync(UUID repoId, UUID userId) {
-        doIndexAsync(repoId, userId, true);
+    public void resumeAsync(UUID repoId, String apiKey) {
+        doIndexAsync(repoId, apiKey, true);
     }
 
-    private void doIndexAsync(UUID repoId, UUID userId, boolean resume) {
+    private void doIndexAsync(UUID repoId, String apiKey, boolean resume) {
         try {
-            doIndex(repoId, userId, resume);
+            doIndex(repoId, apiKey, resume);
         } catch (Exception ex) {
             if (isPaused(repoId)) {
                 markPaused(repoId);
@@ -98,8 +96,8 @@ public class IndexingService {
         }
     }
 
-    public Repository pauseIndexing(UUID repoId, UUID userId) {
-        Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
+    public Repository pauseIndexing(UUID repoId) {
+        Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
         if (repo.getIndexStatus() != IndexStatus.INDEXING) {
             throw new BadRequestException("Repository is not being indexed");
@@ -108,9 +106,9 @@ public class IndexingService {
         return repo;
     }
 
-    public Repository resumeIndexing(UUID repoId, UUID userId) {
-        aiKeyResolver.requireKey(userId);
-        Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
+    public Repository resumeIndexing(UUID repoId, String apiKey) {
+        aiKeyResolver.requireKey(apiKey);
+        Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
         if (repo.getIndexStatus() != IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is not paused");
@@ -128,23 +126,19 @@ public class IndexingService {
     }
 
 
-      private void doIndex(UUID repoId, UUID userId, boolean resume) {
+      private void doIndex(UUID repoId, String apiKey, boolean resume) {
         Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
-        String token = userService.decryptAccessToken(userService.requiredById(userId));
-        var userKey = aiKeyResolver.requireKey(userId);
-        VectorStore userVectorStore = aiModelFactory.vectorStore(
-                userId, userKey.provider(), userKey.apiKey());
+        var userKey = aiKeyResolver.requireKey(apiKey);
+        VectorStore userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
 
         Map<String, Object> tree = gitHubApiClient.getRepoTree(
-                token, repo.getOwner(), repo.getName(), repo.getDefaultBranch());
+                repo.getOwner(), repo.getName(), repo.getDefaultBranch());
         List<String> filePaths = listIndexableFiles(tree);
 
         int startFrom = 0;
         int totalChunks = 0;
         if (resume) {
-            // Continue where the pause left off; the file order below is stable,
-            // so the first N files are exactly the ones already embedded.
             startFrom = Math.min(repo.getFilesProcessed(), filePaths.size());
             totalChunks = repo.getChunkCount();
         } else {
@@ -164,7 +158,7 @@ public class IndexingService {
             }
             try {
                 String content = gitHubApiClient.getFileContent(
-                        token, repo.getOwner(), repo.getName(), path);
+                        repo.getOwner(), repo.getName(), path);
                 List<Document> chunks = codeChunker.chunkFile(repoId.toString(), path, content);
                 batch.addAll(chunks);
                 totalChunks += chunks.size();
@@ -211,7 +205,7 @@ public class IndexingService {
     }
 
 
-       @SuppressWarnings("unchecked")
+        @SuppressWarnings("unchecked")
     private List<String> listIndexableFiles(Map<String, Object> tree) {
         if (tree == null || tree.get("tree") == null) {
             return List.of();
@@ -239,7 +233,7 @@ public class IndexingService {
          }
      };
 
-      @Transactional
+       @Transactional
     protected void updateProgress(
             UUID repoId,
             int total,
@@ -258,7 +252,7 @@ public class IndexingService {
         });
     }
 
-      @Transactional
+       @Transactional
     protected void markReady(UUID repoId, int totalFiles, int processedFiles, int totalChunks, String fullName) {
         repositoryRepository.findById(repoId).ifPresent(repo -> {
             repo.setIndexStatus(IndexStatus.READY);
@@ -284,7 +278,7 @@ public class IndexingService {
         log.info("Indexing paused for repo {}", repoId);
     }
 
-      @Transactional
+       @Transactional
     protected void markFailed(UUID repoId, String message) {
         repositoryRepository.findById(repoId).ifPresent(repo -> {
             repo.setIndexStatus(IndexStatus.FAILED);
