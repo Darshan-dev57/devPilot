@@ -11,12 +11,9 @@ import devPilot.backend.entity.User;
 import devPilot.backend.services.UserService;
 import lombok.RequiredArgsConstructor;
 
-@Service("githubOAuth2UserService")
+@Service
 @RequiredArgsConstructor
 public class GithubOAuth2UserService implements OAuth2UserService<OAuth2UserRequest, OAuth2User> {
-
-    public static final String PROVIDER = "github";
-
     private final UserService userService;
     private final DefaultOAuth2UserService delegate = new DefaultOAuth2UserService();
 
@@ -28,8 +25,8 @@ public class GithubOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
         String scopes = userRequest.getAccessToken().getScopes() != null
                 ? String.join(",", userRequest.getAccessToken().getScopes())
                 : "read:user,repo";
-
+    
          User user = userService.upsertFromGitHub(githubUser.getAttributes() , accessToken , scopes);
-          return new AppUserPrincipal(user , githubUser.getAttributes(), PROVIDER);
+         return new AppUserPrincipal(user , githubUser.getAttributes());
             }
 }
