@@ -84,6 +84,10 @@ export function getGithubLoginUrl() {
   return `${getApiBaseUrl()}/oauth2/authorization/github`;
 }
 
+export function getGoogleLoginUrl() {
+  return `${getApiBaseUrl()}/oauth2/authorization/google`;
+}
+
 async function parseError(res: Response): Promise<string> {
   try {
     const data = await res.json();
