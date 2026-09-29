@@ -38,6 +38,12 @@ services:
       - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET
         value: temp-client-secret
         sync: false
+      - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID
+        value: temp-google-client-id
+        sync: false
+      - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET
+        value: temp-google-client-secret
+        sync: false
       - key: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_SCOPE
         value: read:user,repo
       # Fill after Vercel deploy, e.g. https://devpilot.vercel.app
