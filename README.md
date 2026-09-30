@@ -84,21 +84,16 @@ spring.datasource.username=postgres
 spring.datasource.password=postgres
 spring.jpa.hibernate.ddl-auto=update
 
-spring.security.oauth2.client.registration.github.client-id=YOUR_GITHUB_CLIENT_ID
-spring.security.oauth2.client.registration.github.client-secret=YOUR_GITHUB_CLIENT_SECRET
-spring.security.oauth2.client.registration.github.scope=read:user,repo
-
 app.frontend-url=http://localhost:3000
 app.cors.allowed-origins=http://localhost:3000
-app.token-encryptor-password=change-this-to-a-long-random-secret
-app.token-encryptor-salt=change-this-to-a-hex-salt
 
-spring.ai.openai.api-key=sk-your-openai-key
+# Server-side GitHub token used to fetch repository contents. No AI key here.
+app.github.token=ghp_your-github-token
 ```
 
-> The server key is only a fallback placeholder. In normal use every user saves
-> their own key in the app (Settings → AI provider key, OpenAI or Gemini), which
-> the backend encrypts and uses per-request for that user's indexing and chat.
+> There is no server-side AI key. Visitors save their own OpenAI or Gemini key in
+> the browser (Settings → AI provider key) and the backend builds chat and
+> embedding models per request from the key sent in the `X-Api-Key` header.
 
 ### 3. Run the backend
 
