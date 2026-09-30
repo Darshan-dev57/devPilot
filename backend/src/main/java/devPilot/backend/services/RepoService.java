@@ -1,11 +1,8 @@
 package devPilot.backend.services;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -27,37 +24,6 @@ import lombok.RequiredArgsConstructor;
 public class RepoService {
     private final RepositoryRepository repositoryRepository;
     private final GithubApiClient gitHubApiClient;
-
-    @Transactional
-    public List<RepositoryResponse> syncAndListRepos() {
-        List<Map<String, Object>> remoteRepos = gitHubApiClient.listUserRepos();
-
-        List<Repository> saved = new ArrayList<>();
-        Set<UUID> syncedIds = new HashSet<>();
-
-        for (Map<String, Object> remote : remoteRepos) {
-            Long githubRepoId = toLong(remote.get("id"));
-            Repository repo = repositoryRepository
-                    .findByGithubRepoId(githubRepoId)
-                    .orElseGet(Repository::new);
-
-            fromRemote(repo, remote);
-            repo = repositoryRepository.save(repo);
-            saved.add(repo);
-            syncedIds.add(repo.getId());
-        }
-
-        for (Repository stored : repositoryRepository.findAll()) {
-            if (!syncedIds.contains(stored.getId())) {
-                saved.add(stored);
-            }
-        }
-
-        return saved.stream()
-                .sorted((a, b) -> a.getFullName().compareToIgnoreCase(b.getFullName()))
-                .map(this::toResponse)
-                .toList();
-    }
 
     /**
      * Adds a repository for chat, or returns the existing row if it is already stored.
@@ -90,9 +56,16 @@ public class RepoService {
                 });
     }
 
+    /**
+     * Every repository that visitors have added. There is deliberately no sync-from-GitHub
+     * path: the server token belongs to the operator, not the visitor, so syncing would
+     * publish the operator's own (possibly private) repositories to anonymous callers.
+     * Repositories only enter the list through an explicit add-by-URL.
+     */
     @Transactional(readOnly = true)
     public List<RepositoryResponse> listStored() {
         return repositoryRepository.findAll().stream()
+                .sorted((a, b) -> a.getFullName().compareToIgnoreCase(b.getFullName()))
                 .map(this::toResponse)
                 .toList();
     }

@@ -27,13 +27,7 @@ function updateRepoInListCache(
 export function useRepos() {
   return useQuery({
     queryKey: queryKeys.repos.list(),
-    queryFn: async () => {
-      const repos = await api.listRepos(false);
-      if (repos.length === 0) {
-        return api.listRepos(true);
-      }
-      return repos;
-    },
+    queryFn: () => api.listRepos(),
     staleTime: 30_000,
     refetchInterval: (query) =>
       hasIndexingRepos(query.state.data) ? INDEXING_POLL_MS : false,
@@ -167,26 +161,26 @@ export function useAddPublicRepo() {
   });
 }
 
+/** Re-reads the list of repositories visitors have added. */
 export function useRefreshRepos() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: () =>
-      toast.promise(api.listRepos(true), {
+      toast.promise(api.listRepos(), {
         loading: {
-          title: "Syncing repositories",
-          description: "Fetching the latest repos from GitHub…",
+          title: "Refreshing repositories",
           type: "loading",
         },
         success: (repos) => ({
-          title: "Sync successful",
-          description: `${repos.length} repositories loaded`,
+          title: "Up to date",
+          description: `${repos.length} repositories available`,
           type: "success",
         }),
         error: (error: Error) => ({
-          title: "Sync failed",
+          title: "Refresh failed",
           description:
-            error instanceof Error ? error.message : "Could not sync repositories",
+            error instanceof Error ? error.message : "Could not load repositories",
           type: "error",
         }),
       }),

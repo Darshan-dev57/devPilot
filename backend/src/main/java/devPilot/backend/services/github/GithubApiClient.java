@@ -1,7 +1,6 @@
 package devPilot.backend.services.github;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +19,6 @@ public class GithubApiClient {
 
     private static final String API_BASE = "https://api.github.com";
 
-    private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_MAP = new ParameterizedTypeReference<>() {
-    };
     private static final ParameterizedTypeReference<Map<String, Object>> MAP = new ParameterizedTypeReference<>() {
     };
 
@@ -29,34 +26,6 @@ public class GithubApiClient {
 
     @Value("${app.github.token}")
     private String serverToken;
-
-    public List<Map<String, Object>> listUserRepos() {
-        List<Map<String, Object>> all = new ArrayList<>();
-        int page = 1;
-        while (page <= 10) {
-            final int currentPage = page;
-            List<Map<String, Object>> pageRepos = client()
-                    .get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/user/repos")
-                            .queryParam("affiliation", "owner,collaborator,organization_member")
-                            .queryParam("sort", "updated")
-                            .queryParam("per_page", 100)
-                            .queryParam("page", currentPage)
-                            .build())
-                    .retrieve()
-                    .body(LIST_MAP);
-            if (pageRepos == null || pageRepos.isEmpty()) {
-                break;
-            }
-            all.addAll(pageRepos);
-            if (pageRepos.size() < 100) {
-                break;
-            }
-            page++;
-        }
-        return all;
-    }
 
     public Map<String, Object> getRepository(String owner, String repo) {
         return client()

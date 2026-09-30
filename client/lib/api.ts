@@ -132,8 +132,7 @@ export async function apiFetch<T>(
 }
 
 export const api = {
-  listRepos: (refresh = true) =>
-    apiFetch<Repository[]>(`/api/repos?refresh=${refresh}`),
+  listRepos: () => apiFetch<Repository[]>("/api/repos"),
   addPublicRepo: (owner: string, name: string) =>
     apiFetch<Repository>("/api/repos/by-url", {
       method: "POST",
