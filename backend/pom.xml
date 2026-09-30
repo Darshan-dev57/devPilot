@@ -67,13 +67,30 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!--
+			Plain model jars, not the starters. The starters pull in Spring AI's
+			auto-configuration, which tries to build server-side singleton models at
+			startup and fails when no server API key is set. This app is bring-your-own-key:
+			AiModelFactory constructs chat/embedding models and PgVectorStore per request
+			using the key sent in the X-Api-Key header. With no autoconfigure jar on the
+			classpath there is nothing to exclude and nothing that can fail on boot.
+		-->
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
-			<artifactId>spring-ai-starter-model-openai</artifactId>
+			<artifactId>spring-ai-openai</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.ai</groupId>
-			<artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+			<artifactId>spring-ai-client-chat</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-pgvector-store</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
