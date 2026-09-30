@@ -59,6 +59,14 @@ public class RepoService {
                 .toList();
     }
 
+    /**
+     * Adds a repository for chat, or returns the existing row if it is already stored.
+     *
+     * <p>Because anyone can paste any public URL, repositories are global. An already-indexed
+     * repository is returned as-is rather than re-indexed: re-running indexing would spend
+     * the server's GitHub API quota and the visitor's embedding credits to reproduce vectors
+     * that already exist.
+     */
     @Transactional
     public Repository addPublicRepo(String owner, String name) {
         Map<String, Object> remote;

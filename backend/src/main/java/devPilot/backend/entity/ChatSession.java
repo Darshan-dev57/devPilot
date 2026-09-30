@@ -16,6 +16,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+/**
+ * A chat conversation against a repository. There is no owning user; sessions are reached
+ * by their unguessable UUID only. Requires the Neon migration that drops the OAuth-era
+ * {@code user_id} column.
+ */
 @Entity
 @Table(name = "chat_sessions")
 @Getter
@@ -28,9 +33,6 @@ public class ChatSession {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-
-    @Column(name = "user_id", nullable = false)
-    private UUID userId;
 
     @Column(name = "repository_id", nullable = false)
     private UUID repositoryId;

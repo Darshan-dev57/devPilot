@@ -19,8 +19,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+/**
+ * A GitHub repository available for chat. There is no owning user: anyone can paste any
+ * public repository URL, so repositories are global and deduplicated by {@code githubRepoId}.
+ * Requires the Neon migration that drops the OAuth-era {@code user_id} column and its
+ * per-user unique constraint in favour of a unique index on {@code github_repo_id}.
+ */
 @Entity
-@Table(name = "repositories", uniqueConstraints = @UniqueConstraint(columnNames = { "user_id", "github_repo_id" }))
+@Table(name = "repositories", uniqueConstraints = @UniqueConstraint(columnNames = { "github_repo_id" }))
 @Getter
 @Setter
 @AllArgsConstructor
@@ -30,9 +36,6 @@ public class Repository {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-
-    @Column(name = "user_id", nullable = false)
-    private UUID userId;
 
     @Column(name = "github_repo_id", nullable = false)
     private Long githubRepoId;
