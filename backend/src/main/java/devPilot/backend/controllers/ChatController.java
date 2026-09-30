@@ -50,7 +50,8 @@ public class ChatController {
     public SseEmitter sendMessage(
             @PathVariable UUID id,
             @Valid @RequestBody ChatMessageRequest request,
-            @RequestHeader("X-Api-Key") String apiKey) {
-        return chatService.streamReply(id, request.content(), apiKey);
+            @RequestHeader("X-Api-Key") String apiKey,
+            @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
+        return chatService.streamReply(id, request.content(), apiKey, provider);
     }
 }

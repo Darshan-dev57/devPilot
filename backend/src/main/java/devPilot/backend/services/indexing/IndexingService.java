@@ -49,8 +49,8 @@ public class IndexingService {
     @Value("${app.indexing.max-file-bytes:102400}")
     private long maxFileBytes;
 
-    public Repository startIndexing(UUID repoId, String apiKey) {
-        aiKeyResolver.requireKey(apiKey);
+    public Repository startIndexing(UUID repoId, String apiKey, String provider) {
+        aiKeyResolver.requireKey(apiKey, provider);
         Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
 
@@ -72,18 +72,18 @@ public class IndexingService {
     }
 
     @Async("indexingExecutor")
-     public void indexAsync(UUID repoId, String apiKey) {
-        doIndexAsync(repoId, apiKey, false);
+     public void indexAsync(UUID repoId, String apiKey, String provider) {
+        doIndexAsync(repoId, apiKey, provider, false);
     }
 
     @Async("indexingExecutor")
-    public void resumeAsync(UUID repoId, String apiKey) {
-        doIndexAsync(repoId, apiKey, true);
+    public void resumeAsync(UUID repoId, String apiKey, String provider) {
+        doIndexAsync(repoId, apiKey, provider, true);
     }
 
-    private void doIndexAsync(UUID repoId, String apiKey, boolean resume) {
+    private void doIndexAsync(UUID repoId, String apiKey, String provider, boolean resume) {
         try {
-            doIndex(repoId, apiKey, resume);
+            doIndex(repoId, apiKey, provider, resume);
         } catch (Exception ex) {
             if (isPaused(repoId)) {
                 markPaused(repoId);
@@ -106,8 +106,8 @@ public class IndexingService {
         return repo;
     }
 
-    public Repository resumeIndexing(UUID repoId, String apiKey) {
-        aiKeyResolver.requireKey(apiKey);
+    public Repository resumeIndexing(UUID repoId, String apiKey, String provider) {
+        aiKeyResolver.requireKey(apiKey, provider);
         Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
         if (repo.getIndexStatus() != IndexStatus.PAUSED) {
@@ -126,10 +126,10 @@ public class IndexingService {
     }
 
 
-      private void doIndex(UUID repoId, String apiKey, boolean resume) {
+    private void doIndex(UUID repoId, String apiKey, String provider, boolean resume) {
         Repository repo = repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
-        var userKey = aiKeyResolver.requireKey(apiKey);
+        var userKey = aiKeyResolver.requireKey(apiKey, provider);
         VectorStore userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
 
         Map<String, Object> tree = gitHubApiClient.getRepoTree(

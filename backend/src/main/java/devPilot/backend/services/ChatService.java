@@ -84,7 +84,7 @@ public class ChatService {
                 .orElseThrow(() -> new NotFoundException("Chat session not found"));
     }
 
-    public SseEmitter streamReply(UUID sessionId, String userContent, String apiKey) {
+    public SseEmitter streamReply(UUID sessionId, String userContent, String apiKey, String provider) {
         ChatSession session = requireSession(sessionId);
         Repository repo = repoService.requireOwned(session.getRepositoryId());
         if (repo.getIndexStatus() != IndexStatus.READY) {
@@ -97,7 +97,7 @@ public class ChatService {
                 .content(userContent)
                 .build());
 
-        var userKey = aiKeyResolver.requireKey(apiKey);
+        var userKey = aiKeyResolver.requireKey(apiKey, provider);
         var userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
         var retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
 

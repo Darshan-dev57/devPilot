@@ -50,9 +50,10 @@ public class RepoController {
     @PostMapping("/{id}/index")
     public ResponseEntity<RepositoryResponse> index(
             @PathVariable UUID id,
-            @RequestHeader("X-Api-Key") String apiKey) {
-        Repository repo = indexingService.startIndexing(id, apiKey);
-        indexingService.indexAsync(id, apiKey);
+            @RequestHeader("X-Api-Key") String apiKey,
+            @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
+        Repository repo = indexingService.startIndexing(id, apiKey, provider);
+        indexingService.indexAsync(id, apiKey, provider);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
@@ -65,9 +66,10 @@ public class RepoController {
     @PostMapping("/{id}/resume-index")
     public ResponseEntity<RepositoryResponse> resumeIndex(
             @PathVariable UUID id,
-            @RequestHeader("X-Api-Key") String apiKey) {
-        Repository repo = indexingService.resumeIndexing(id, apiKey);
-        indexingService.resumeAsync(id, apiKey);
+            @RequestHeader("X-Api-Key") String apiKey,
+            @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
+        Repository repo = indexingService.resumeIndexing(id, apiKey, provider);
+        indexingService.resumeAsync(id, apiKey, provider);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 

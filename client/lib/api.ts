@@ -113,6 +113,10 @@ export async function apiFetch<T>(
   };
   if (apiKey) {
     headers["X-Api-Key"] = apiKey;
+    // The backend cannot reliably tell a Gemini key from an OpenAI one: Google
+    // issues Gemini keys under several prefixes. The chosen provider is sent
+    // explicitly so routing does not depend on guessing the key format.
+    headers["X-AI-Provider"] = getStoredProvider();
   }
 
   const res = await fetch(`${getApiBaseUrl()}${path}`, {

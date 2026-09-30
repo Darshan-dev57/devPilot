@@ -1,4 +1,10 @@
-import { getApiBaseUrl, ApiError, type ChatMessage } from "@/lib/api";
+import {
+  getApiBaseUrl,
+  getStoredApiKey,
+  getStoredProvider,
+  ApiError,
+  type ChatMessage,
+} from "@/lib/api";
 
 export type StreamChatHandlers = {
   onUserMessage?: (message: ChatMessage) => void;
@@ -14,12 +20,22 @@ export async function streamChatMessage(
   content: string,
   handlers: StreamChatHandlers = {}
 ): Promise<void> {
+  // The SSE endpoint needs the visitor's key exactly like the REST calls do, so
+  // these headers are set here too. Streaming uses raw fetch rather than
+  // apiFetch because the response body is consumed as a stream, not as JSON.
+  const apiKey = getStoredApiKey();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) {
+    headers["X-Api-Key"] = apiKey;
+    headers["X-AI-Provider"] = getStoredProvider();
+  }
+
   const res = await fetch(
     `${getApiBaseUrl()}/api/chat/sessions/${sessionId}/messages`,
     {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ content }),
       signal: handlers.signal,
     }
