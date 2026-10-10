@@ -4,6 +4,7 @@ import {
   ApiError,
   type ChatMessage,
 } from "@/lib/api";
+import { ownKeyHeaders } from "@/lib/own-keys";
 
 export type StreamChatHandlers = {
   onUserMessage?: (message: ChatMessage) => void;
@@ -20,10 +21,11 @@ export async function streamChatMessage(
   handlers: StreamChatHandlers = {}
 ): Promise<void> {
   // Streaming uses raw fetch rather than apiFetch because the response body is
-  // consumed as a stream, not as JSON. No AI key is sent: the server holds it.
+  // consumed as a stream, not as JSON. The visitor's own keys ride along only if set.
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Visitor-Id": getVisitorId(),
+    ...ownKeyHeaders(),
   };
 
   const res = await fetch(

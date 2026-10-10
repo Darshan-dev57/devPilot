@@ -1,3 +1,5 @@
+import { ownKeyHeaders } from "@/lib/own-keys";
+
 export type IndexStatus = "PENDING" | "INDEXING" | "PAUSED" | "READY" | "FAILED";
 
 
@@ -19,7 +21,7 @@ export type Repository = {
   filesProcessed: number;
   errorMessage: string | null;
   indexedSha: string | null;
-  embeddingProvider: "OPENAI" | "GEMINI" | "OLLAMA" | null;
+  embeddingProvider: "OPENAI" | "GEMINI" | null;
   lastIndexMode: "FULL" | "INCREMENTAL" | "UP_TO_DATE" | null;
   lastIndexDurationMs: number | null;
   indexPhase: string | null;
@@ -48,6 +50,8 @@ export type Usage = {
   questionsPerDay: number;
   indexesLeft: number;
   indexesPerDay: number;
+  ownGeminiKey: boolean;
+  ownOpencodeKey: boolean;
 };
 
 export type ChatSession = {
@@ -131,6 +135,7 @@ export async function apiFetch<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Visitor-Id": getVisitorId(),
+    ...ownKeyHeaders(),
     ...(init?.headers as Record<string, string> | undefined),
   };
 

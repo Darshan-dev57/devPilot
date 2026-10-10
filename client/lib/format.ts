@@ -28,6 +28,5 @@ export function lastRunLabel(repo: Pick<Repository, "lastIndexMode" | "lastIndex
 
 export function providerLabel(provider: string | null | undefined) {
   if (!provider) return null;
-  const p = provider.toUpperCase();
-  return p === "GEMINI" ? "Gemini" : p === "OLLAMA" ? "Ollama" : "OpenAI";
+  return provider.toUpperCase() === "GEMINI" ? "Gemini" : "OpenAI";
 }
