@@ -60,6 +60,12 @@ public class RetryingEmbeddingModel implements EmbeddingModel {
                 if (attempt >= maxAttempts || !isRateLimit(ex)) {
                     throw ex;
                 }
+                // Google's daily cap says so in its quota id ("...PerDay...") and asks for a
+                // wait of hours ("retryDelay": "46296s"). Waiting a minute at a time would only
+                // hold the job for minutes before failing anyway, so fail now.
+                if (isDailyCap(ex)) {
+                    throw new DailyQuotaException(ex);
+                }
                 // A per-minute limit usually says how long to wait. A 429 that names no wait
                 // and keeps coming for about two minutes is the daily quota: fail with that.
                 if (retryHintMs(ex) < 0 && attempt >= BARE_429_ATTEMPTS) {
@@ -100,6 +106,12 @@ public class RetryingEmbeddingModel implements EmbeddingModel {
             return Long.parseLong(m.group(1)) * 1000 + 1000;
         }
         return -1;
+    }
+
+    /** True when the 429 is a per-day quota: a PerDay quota id, or a wait of over ten minutes. */
+    static boolean isDailyCap(Throwable error) {
+        String text = messages(error).toLowerCase(java.util.Locale.ROOT);
+        return text.contains("perday") || retryHintMs(error) > 10 * 60_000L;
     }
 
     /** Thrown when the 429s look like the daily quota rather than the per-minute one. */
