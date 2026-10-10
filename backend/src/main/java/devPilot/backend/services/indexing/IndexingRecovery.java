@@ -32,6 +32,8 @@ public class IndexingRecovery implements ApplicationRunner {
         List<Repository> orphaned = repositoryRepository.findByIndexStatus(IndexStatus.INDEXING);
         for (Repository repo : orphaned) {
             repo.setIndexStatus(IndexStatus.PAUSED);
+            // The old phase ("Waiting 59 s ...") is stale after a restart.
+            repo.setIndexPhase("Paused by a server restart. Resume to continue");
             repo.setErrorMessage(null);
             repo.setUpdatedAt(Instant.now());
         }
