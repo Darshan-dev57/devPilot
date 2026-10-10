@@ -40,7 +40,7 @@ public class GlobalExceptionHandler {
     ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
-                .map(err -> err.getField() + ": " + err.getDefaultMessage())
+                .map(err -> err.getDefaultMessage())
                 .orElse("Validation failed");
         return error(HttpStatus.BAD_REQUEST, message);
     }

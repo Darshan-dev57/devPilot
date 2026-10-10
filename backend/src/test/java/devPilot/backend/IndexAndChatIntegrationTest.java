@@ -217,15 +217,19 @@ class IndexAndChatIntegrationTest {
 
     @Test
     @Order(6)
-    void aRejectedKeyFailsTheJobWithAPlainMessage() throws Exception {
+    void aRejectedKeyIsRefusedUpFrontAndTheExistingIndexSurvives() throws Exception {
+        int before = countVectors();
         GITHUB.commit(Map.of("src/A.java", "class A {}\n"));
         HttpRequest request = HttpRequest.newBuilder(uri("/api/repos/" + repoId + "/index"))
                 .header("X-Api-Key", "bad-key").header("X-AI-Provider", "openai")
                 .POST(HttpRequest.BodyPublishers.noBody()).build();
-        assertThat(http.send(request, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(202);
-        JsonNode status = waitWhileIndexing();
-        assertThat(status.get("indexStatus").asString()).isEqualTo("FAILED");
-        assertThat(status.get("errorMessage").asString()).isEqualTo("Your OpenAI API key was rejected. Check it in Settings.");
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(json.readTree(response.body()).get("message").asString())
+                .isEqualTo("Your OpenAI API key was rejected. Check it in Settings.");
+        assertThat(countVectors()).isEqualTo(before);
+        assertThat(waitWhileIndexing().get("indexStatus").asString()).isEqualTo("READY");
     }
 
     private JsonNode indexAndWait() throws Exception {

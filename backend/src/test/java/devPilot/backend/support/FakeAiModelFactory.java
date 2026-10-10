@@ -82,7 +82,9 @@ public class FakeAiModelFactory extends AiModelFactory {
             List<Embedding> out = new ArrayList<>();
             int i = 0;
             for (String text : request.getInstructions()) {
-                embeddedTexts.incrementAndGet();
+                if (!"ping".equals(text)) { // the key check before each job
+                    embeddedTexts.incrementAndGet();
+                }
                 out.add(new Embedding(vector(text), i++));
             }
             return new EmbeddingResponse(out);
