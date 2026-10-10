@@ -73,7 +73,8 @@ public class ChatStreamHandler {
                     // providers drop the odd request with a 500/503. Wait and retry twice, but
                     // only before any text went out, so nothing repeats.
                     .retryWhen(Retry.backoff(2, Duration.ofMillis(rateLimitBackoffMs))
-                            .filter(err -> fullReply.isEmpty() && (AiErrors.isRateLimit(err) || AiErrors.isTransient(err)))
+                            .filter(err -> fullReply.isEmpty() && !(err instanceof RetryingEmbeddingModel.DailyQuotaException)
+                                    && (AiErrors.isRateLimit(err) || AiErrors.isTransient(err)))
                             .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                     .subscribe(
                             token -> appendToken(emitter, fullReply, token),

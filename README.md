@@ -86,7 +86,7 @@ Never commit a key. Everything secret comes from environment variables.
 
 ## Deploy for free
 
-Set `GEMINI_API_KEY` in your host's environment settings and nothing else is required.
+Set `GEMINI_API_KEY` in your host's environment settings and nothing else is required. To get more free quota, list several keys separated by commas (see [More free quota: several keys](#more-free-quota-several-keys)).
 
 - [docs/DEPLOY-FREE.md](docs/DEPLOY-FREE.md): Neon (database) + Render (backend) + Vercel (frontend), no card.
 - [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md): one Oracle Ampere VM running `docker-compose.prod.yml`.
@@ -128,6 +128,22 @@ To keep one free key alive on a public site, the server enforces (all configurab
 | Index runs per day, whole site | 100 | `LIMIT_INDEXES_GLOBAL` |
 | Largest repo accepted | 60 MB | `MAX_REPO_MB` |
 | Most code files per index | 800 | `MAX_INDEX_FILES` |
+
+### More free quota: several keys
+
+`GEMINI_API_KEY` takes one key or several, separated by commas, no spaces needed:
+
+```
+GEMINI_API_KEY=AIzaKeyOne,AIzaKeyTwo,AIzaKeyThree
+```
+
+DevPilot uses the first key until Google stops it, then moves the same request to the next key, for both indexing and answers:
+
+- a key out of its daily quota, or rejected as invalid, is skipped until midnight Pacific;
+- a key at its per-minute limit just hands the request to the next key;
+- when every key is used up, visitors see "The free Gemini quota for today is used up. Please try again tomorrow."
+
+**Each key must come from a different Google Cloud project.** Google applies rate limits "per project, not per API key" ([rate limits page](https://ai.google.dev/gemini-api/docs/rate-limits)), so two keys from the same project share one quota and add nothing. In AI Studio, create each key in a new project. All keys use the same embedding model, so repos indexed with one key are searchable with any other. The logs only ever say "Gemini key #2 of 3", never the key.
 
 The site-wide index cap counts index runs, not chunks. If Google's daily embedding quota runs out first, visitors get "The free Gemini quota for today is used up. Please try again tomorrow."
 

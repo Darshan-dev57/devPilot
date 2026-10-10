@@ -9,8 +9,8 @@ import devPilot.backend.exceptions.ServiceUnavailableException;
 /**
  * Which AI keys a request uses.
  *
- * <p>By default everything runs on the server owner's one Gemini key (GEMINI_API_KEY,
- * free tier), inside the daily free limits. OPENAI_API_KEY works as the server key too.
+ * <p>By default everything runs on the server owner's Gemini key (GEMINI_API_KEY, free
+ * tier; several comma-separated keys act as fallbacks), inside the daily free limits. OPENAI_API_KEY works as the server key too.
  * A visitor who wants more can send their own Gemini key (indexing and answers) and/or a
  * key for answers from OpenAI, Claude or OpenCode Zen; those requests skip the daily
  * limit. Embeddings always stay on the server's embedding provider (Gemini), so a repo
@@ -37,7 +37,9 @@ public class AiKeyResolver {
             @Value("${app.ai.openai.api-key:}") String openaiKey,
             @Value("${app.ai.provider:}") String preferred,
             @Value("${app.ai.embedding-provider:}") String embeddingPreferred) {
-        this.geminiKey = clean(geminiKey);
+        // GEMINI_API_KEY may list several keys ("k1,k2"); the first is the main one and
+        // GeminiKeyPool falls back to the others when Google stops it.
+        this.geminiKey = GeminiKeyPool.parse(geminiKey).stream().findFirst().orElse("");
         this.openaiKey = clean(openaiKey);
         this.preferred = clean(preferred);
         this.embeddingPreferred = clean(embeddingPreferred);

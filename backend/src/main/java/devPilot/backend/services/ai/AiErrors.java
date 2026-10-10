@@ -28,9 +28,7 @@ public final class AiErrors {
             return "OpenCode Zen refused: its free models only work inside the OpenCode app. Pick a paid model in "
                     + "\"Use your own key\", or use a Gemini key.";
         }
-        if (eq(status, 401) || eq(status, 403) || lower.contains("invalid_api_key") || lower.contains("incorrect api key")
-                || lower.contains("authentication_error") || lower.contains("invalid x-api-key")
-                || lower.contains("api key not valid") || lower.contains("api_key_invalid") || lower.contains("permission_denied")) {
+        if (isKeyRejected(error)) {
             return visitorKey
                     ? "Your " + name + " key was rejected. Check it in \"Use your own key\"."
                     : "The server's " + name + " key was rejected. The site owner needs to check it.";
@@ -72,6 +70,15 @@ public final class AiErrors {
             return name + " did not respond in time. Try again.";
         }
         return name + " returned an error" + (status != null ? " (HTTP " + status + ")" : "") + ". Try again.";
+    }
+
+    /** True when the provider refused the key itself: HTTP 401/403 or its "invalid key" wording. */
+    public static boolean isKeyRejected(Throwable error) {
+        Integer status = status(error);
+        String lower = text(error);
+        return eq(status, 401) || eq(status, 403) || lower.contains("invalid_api_key") || lower.contains("incorrect api key")
+                || lower.contains("authentication_error") || lower.contains("invalid x-api-key")
+                || lower.contains("api key not valid") || lower.contains("api_key_invalid") || lower.contains("permission_denied");
     }
 
     /** True for a provider hiccup worth one more try: HTTP 500/502/503/504/529 or "overloaded". */

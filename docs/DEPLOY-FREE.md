@@ -45,7 +45,7 @@ Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
 2. Fill the `sync: false` variables in the dashboard:
    - `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` — from step 1.
    - `APP_GITHUB_TOKEN` — from step 2.
-   - `GEMINI_API_KEY` — from step 2b.
+   - `GEMINI_API_KEY` — from step 2b. For more free quota, paste several keys separated by commas (`key1,key2`), each made in a different Google Cloud project.
    - `APP_FRONTEND_URL` and `APP_CORS_ALLOWED_ORIGINS` — your Vercel URL from step 4.
 3. Deploy. First build takes ~8–10 min (Maven downloads). Health check:
    `https://<your-service>.onrender.com/actuator/health` → `{"status":"UP"}`.
