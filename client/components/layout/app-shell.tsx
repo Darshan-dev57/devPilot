@@ -2,218 +2,98 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings } from "lucide-react";
-
-import { DevPilotIcon } from "@/components/icons/devpilot-icon";
 
 import { ModeToggle } from "@/components/ui/mode-toggle";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import {
-  dashboardNavGroups,
-  isDashboardNavActive,
-} from "@/lib/dashboard-nav";
 import { cn } from "@/lib/utils";
 
+export function BrandMark({ className }: { className?: string }) {
+  return (
+    <Link href="/" className={cn("group inline-flex items-center gap-2", className)}>
+      <span className="grid size-7 place-items-center rounded-md bg-foreground font-mono text-[13px] font-semibold text-background">
+        dp
+      </span>
+      <span className="text-[15px] font-semibold tracking-tight">DevPilot</span>
+    </Link>
+  );
+}
+
+const NAV = [
+  { href: "/dashboard", label: "Repos" },
+  { href: "/dashboard/settings", label: "Settings" },
+];
+
+export function SiteHeader({ className, wide = false }: { className?: string; wide?: boolean }) {
+  const pathname = usePathname();
+  return (
+    <header
+      className={cn(
+        "sticky top-0 z-30 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70",
+        className
+      )}
+    >
+      <div className={cn("mx-auto flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6", !wide && "max-w-6xl")}>
+        <BrandMark />
+        <nav className="flex items-center gap-1">
+          {NAV.map((item) => {
+            const active =
+              item.href === "/dashboard"
+                ? pathname === "/dashboard" || pathname.startsWith("/chat")
+                : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  active ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+          <ModeToggle />
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+/**
+ * Page frame: a slim top bar and a centred column. The optional title block keeps the
+ * same props the pages already pass (title, description, actions).
+ */
 export function AppShell({
   children,
   title,
   description,
   actions,
   hideHeader = false,
+  fullHeight = false,
 }: {
   children: React.ReactNode;
   title?: string;
   description?: string;
   actions?: React.ReactNode;
   hideHeader?: boolean;
+  fullHeight?: boolean;
 }) {
-  const pathname = usePathname();
-
   return (
-    <SidebarProvider>
-      <Sidebar variant="inset" collapsible="icon">
-        <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                size="lg"
-                render={<Link href="/dashboard" />}
-                tooltip="DevPilot"
-              >
-                <DevPilotIcon className="size-8 rounded-[10px]" />
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">DevPilot</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    Chat with your code
-                  </span>
-                </div>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-
-        <SidebarContent>
-          {dashboardNavGroups.map((group) => (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {group.items.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        isActive={isDashboardNavActive(
-                          pathname,
-                          item.href,
-                          item.exact
-                        )}
-                        tooltip={item.title}
-                        render={<Link href={item.href} />}
-                      >
-                        <item.icon />
-                        <span>{item.title}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
-        </SidebarContent>
-
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <SidebarMenuButton
-                      size="lg"
-                      className="data-[popup-open]:bg-sidebar-accent"
-                    />
-                  }
-                >
-                  <div className="grid size-8 place-items-center rounded-lg bg-muted text-sm font-medium">
-                    DP
-                  </div>
-                  <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">Guest</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      No account needed
-                    </span>
-                  </div>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  className="min-w-56 rounded-lg"
-                  side="top"
-                  align="start"
-                  sideOffset={8}
-                >
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel className="font-normal">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-sm font-medium">Guest session</span>
-                        <span className="text-xs text-muted-foreground">
-                          Your AI key is stored in this browser only
-                        </span>
-                      </div>
-                    </DropdownMenuLabel>
-                  </DropdownMenuGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    render={<Link href="/dashboard/settings" />}
-                  >
-                    <Settings />
-                    Settings
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-      </Sidebar>
-
-      <SidebarInset>
-        {!hideHeader && (
-          <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-              <div className="min-w-0">
-                {title && (
-                  <h1 className="truncate font-heading text-sm font-medium">
-                    {title}
-                  </h1>
-                )}
-                {description && (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {description}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {actions}
-                <ModeToggle />
-              </div>
+    <div className={cn("flex flex-col", fullHeight ? "h-dvh" : "min-h-dvh")}>
+      <SiteHeader wide={fullHeight} />
+      <main className={cn("flex w-full flex-1 flex-col", fullHeight && "min-h-0")}>
+        {!hideHeader && title && (
+          <div className="mx-auto flex w-full max-w-6xl flex-wrap items-end justify-between gap-3 px-4 pt-8 sm:px-6">
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
+              {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
             </div>
-          </header>
+            {actions}
+          </div>
         )}
-        <div className="flex flex-1 flex-col">{children}</div>
-      </SidebarInset>
-    </SidebarProvider>
-  );
-}
-
-export function BrandMark({ className }: { className?: string }) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2.5 font-semibold tracking-tight",
-        className
-      )}
-    >
-      <DevPilotIcon className="size-8 rounded-[10px]" />
-      <span className="font-heading text-[1.05rem] leading-none">DevPilot</span>
+        {children}
+      </main>
     </div>
-  );
-}
-
-export function GhostButtonLink({
-  href,
-  children,
-  className,
-}: {
-  href: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <Button variant="ghost" size="sm" className={className} render={<Link href={href} />}>
-      {children}
-    </Button>
   );
 }
