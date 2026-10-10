@@ -37,4 +37,12 @@ class CodeContextRetrieverTest {
     void saysSoWhenNothingMatched() {
         assertThat(retriever.build(List.of()).contextText()).isEqualTo("(no matching code chunks found)");
     }
+
+    @Test
+    void codeLinesCarryTheirLineNumbersSoCitationsCanBeExact() {
+        String chunk = "File: src/A.java (lines 35-37)\nIn: class A\n\n\tint a;\n\tint b = 30;\n}\n";
+        assertThat(CodeContextRetriever.numberLines(chunk))
+                .isEqualTo("File: src/A.java (lines 35-37)\nIn: class A\n\n35| \tint a;\n36| \tint b = 30;\n37| }\n");
+        assertThat(CodeContextRetriever.numberLines("plain text without a header")).isEqualTo("plain text without a header");
+    }
 }
