@@ -34,6 +34,20 @@ class CodeContextRetrieverTest {
     }
 
     @Test
+    void keepsHitsFarApartInOneFileAsSeparateCitations() {
+        RetrievedContext context = retriever.build(List.of(
+                chunk("src/JPF.java", 599, 643),
+                chunk("src/A.java", 1, 20),
+                chunk("src/JPF.java", 1, 39),
+                chunk("src/JPF.java", 641, 661)));
+
+        assertThat(context.citations()).containsExactly(
+                new CitationDto("src/JPF.java", 599, 661, "java"),
+                new CitationDto("src/A.java", 1, 20, "java"),
+                new CitationDto("src/JPF.java", 1, 39, "java"));
+    }
+
+    @Test
     void saysSoWhenNothingMatched() {
         assertThat(retriever.build(List.of()).contextText()).isEqualTo("(no matching code chunks found)");
     }
