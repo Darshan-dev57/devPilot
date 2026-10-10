@@ -1,9 +1,7 @@
 package devPilot.backend.services.ai;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,6 +19,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CodeContextRetriever {
     private static final String NO_MATCHES = "(no matching code chunks found)";
+
+    /** Hits in one file at most this many lines apart are shown as one chip. */
+    private static final int NEARBY_LINES = 20;
 
     private final CitationMapper citationMapper;
 
@@ -45,16 +46,21 @@ public class CodeContextRetriever {
 
     /** Visible for tests: turns ranked chunks into prompt context and citation chips. */
     RetrievedContext build(List<Document> documents) {
-        // One chip per file, best match first, line range widened to cover every hit in it.
-        Map<String, CitationDto> byFile = new LinkedHashMap<>();
+        // Best match first. Hits that sit close together in one file share a chip; hits far
+        // apart keep their own, so a big file never turns into one chip spanning the whole file.
+        List<CitationDto> citations = new ArrayList<>();
         for (Document document : documents) {
             CitationDto citation = citationMapper.fromDocument(document);
             if (citation.filePath() == null) {
                 continue;
             }
-            byFile.merge(citation.filePath(), citation, CodeContextRetriever::widen);
+            int near = indexOfNearby(citations, citation);
+            if (near >= 0) {
+                citations.set(near, widen(citations.get(near), citation));
+            } else {
+                citations.add(citation);
+            }
         }
-        List<CitationDto> citations = new ArrayList<>(byFile.values());
 
         StringBuilder context = new StringBuilder();
         for (Document document : documents) {
@@ -92,6 +98,24 @@ public class CodeContextRetriever {
             out.append(line + i).append("| ").append(lines[i]).append('\n');
         }
         return out.toString();
+    }
+
+    private static int indexOfNearby(List<CitationDto> citations, CitationDto hit) {
+        for (int i = 0; i < citations.size(); i++) {
+            CitationDto chip = citations.get(i);
+            if (!chip.filePath().equals(hit.filePath())) {
+                continue;
+            }
+            if (chip.startLine() == null || hit.startLine() == null) {
+                return i;
+            }
+            int chipEnd = chip.endLine() == null ? chip.startLine() : chip.endLine();
+            int hitEnd = hit.endLine() == null ? hit.startLine() : hit.endLine();
+            if (hit.startLine() <= chipEnd + NEARBY_LINES && chip.startLine() <= hitEnd + NEARBY_LINES) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static CitationDto widen(CitationDto a, CitationDto b) {
