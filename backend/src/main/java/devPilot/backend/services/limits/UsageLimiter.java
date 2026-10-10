@@ -43,9 +43,9 @@ public class UsageLimiter {
             JdbcTemplate jdbc,
             @Value("${app.limits.zone:America/Los_Angeles}") String zone,
             @Value("${app.limits.questions-per-visitor:30}") int questionsPerVisitor,
-            @Value("${app.limits.indexes-per-visitor:2}") int indexesPerVisitor,
+            @Value("${app.limits.indexes-per-visitor:5}") int indexesPerVisitor,
             @Value("${app.limits.questions-global:1000}") int questionsGlobal,
-            @Value("${app.limits.indexes-global:5}") int indexesGlobal) {
+            @Value("${app.limits.indexes-global:100}") int indexesGlobal) {
         this(jdbc, Clock.systemUTC(), ZoneId.of(zone), questionsPerVisitor, indexesPerVisitor, questionsGlobal, indexesGlobal);
     }
 
