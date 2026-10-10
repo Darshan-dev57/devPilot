@@ -34,6 +34,7 @@ services:
       # Free Gemini key for the whole site: https://aistudio.google.com/apikey
       # Several keys work as fallbacks, comma separated: key1,key2,key3
       # Make each key in a different Google Cloud project; free quota is per project.
+      # If left empty, visitors can still index and chat with their own Gemini or OpenAI key.
       - key: GEMINI_API_KEY
         sync: false
       # Daily free limits (0 = off). See README "Free tier and limits".

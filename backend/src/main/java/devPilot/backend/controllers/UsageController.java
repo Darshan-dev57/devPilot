@@ -37,16 +37,29 @@ public class UsageController {
         AiProvider chat = answering != null ? answering.provider() : aiKeyResolver.chatProvider();
         String model = answering != null && answering.model() != null ? answering.model()
                 : answering != null ? aiModelFactory.visitorDefaultModel(chat) : aiModelFactory.chatModelName(chat);
+        AiKeyResolver.UserAiKey indexKey = indexKey(keys);
         return new UsageResponse(chat.label(), model, aiKeyResolver.configured(),
                 usage.questionsLeft(), usage.questionsPerDay(), usage.indexesLeft(), usage.indexesPerDay(),
-                keys.hasGemini(), ownChat);
+                keys.hasGemini(), ownChat, indexKey != null, indexKey != null && indexKey.visitor(),
+                indexKey == null ? null : indexKey.provider().label());
+    }
+
+    private AiKeyResolver.UserAiKey indexKey(VisitorKeys keys) {
+        try {
+            return aiKeyResolver.embeddingKey(keys);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     /**
      * ownGeminiKey: indexing runs on the visitor's Gemini key (no index limit).
      * ownChatKey: answers run on the visitor's own key (no question limit).
+     * canIndex: some key can index for this visitor; ownIndexKey: it is their own (no index
+     * limit); indexProvider: Gemini or OpenAI, whose embeddings a new index would use.
      */
     public record UsageResponse(String provider, String model, boolean configured, int questionsLeft,
-            int questionsPerDay, int indexesLeft, int indexesPerDay, boolean ownGeminiKey, boolean ownChatKey) {
+            int questionsPerDay, int indexesLeft, int indexesPerDay, boolean ownGeminiKey, boolean ownChatKey,
+            boolean canIndex, boolean ownIndexKey, String indexProvider) {
     }
 }

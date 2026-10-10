@@ -53,6 +53,12 @@ export type Usage = {
   ownGeminiKey: boolean;
   /** Answers run on the visitor's own key (any provider). */
   ownChatKey: boolean;
+  /** Some key can index for this visitor (theirs or the server's). */
+  canIndex: boolean;
+  /** Indexing runs on the visitor's own key: Gemini, or OpenAI when the site has no Gemini key. */
+  ownIndexKey: boolean;
+  /** "Gemini" or "OpenAI": whose embeddings a new index would use. */
+  indexProvider: string | null;
 };
 
 export type ChatSession = {

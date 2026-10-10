@@ -104,13 +104,10 @@ public class ChatService {
         if (userContent.length() > MAX_QUESTION_CHARS) {
             throw new BadRequestException("That question is too long. Keep it under " + MAX_QUESTION_CHARS + " characters.");
         }
-        var userKey = aiKeyResolver.embeddingKey(visitorKeys);
+        // Vectors from one provider's embedding model cannot be searched with another's,
+        // so the search key always matches the store this repo was indexed into.
+        var userKey = aiKeyResolver.searchKey(repo.getEmbeddingProvider(), visitorKeys);
         var chatKey = aiKeyResolver.chatKey(visitorKeys);
-        // Vectors from one provider's embedding model cannot be searched with another's.
-        if (repo.getEmbeddingProvider() != null && !repo.getEmbeddingProvider().equals(userKey.provider().name())) {
-            throw new BadRequestException("This repo was indexed with " + label(repo.getEmbeddingProvider())
-                    + ", but the server now uses " + label(userKey.provider().name()) + ". Re-index it to keep chatting.");
-        }
         // A visitor answering on their own key is not using the free allowance.
         if (!chatKey.visitor()) {
             usageLimiter.consume(visitorId, UsageLimiter.Kind.QUESTION);
@@ -156,10 +153,6 @@ public class ChatService {
     private List<ChatMessage> recentHistory(UUID sessionId) {
         List<ChatMessage> all = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
         return all.subList(Math.max(0, all.size() - ChatPromptBuilder.HISTORY_MESSAGES), all.size());
-    }
-
-    private static String label(String provider) {
-        return "GEMINI".equals(provider) ? "Gemini" : "OpenAI";
     }
 
     private ChatSessionResponse toSessionResponse(ChatSession session) {

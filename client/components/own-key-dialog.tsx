@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useUsage } from "@/hooks/use-usage";
 import { PROVIDERS, clearOwnKeys, getOwnKeys, providerInfo, saveOwnKeys, type ChatProvider } from "@/lib/own-keys";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,8 @@ export function OwnKeyButton({ className, label = "Use your own key" }: { classN
   const saved = getOwnKeys();
   const hasSaved = Boolean(saved.key);
   const info = providerInfo(keys.provider);
+  const { data: usage } = useUsage();
+  const noSharedKey = usage ? !usage.configured : false;
 
   const close = () => {
     setOpen(false);
@@ -146,9 +149,21 @@ export function OwnKeyButton({ className, label = "Use your own key" }: { classN
                   className={field}
                 />
                 <span className="text-xs text-muted-foreground">
-                  {info.label} key answers questions only. Indexing needs embeddings, which run on Gemini: your key if
-                  you add one here, otherwise the free server key (counts toward the daily index limit).
+                  {keys.provider === "openai"
+                    ? noSharedKey
+                      ? "This site has no shared key right now, so your OpenAI key indexes too (OpenAI embeddings). Add a Gemini key here only if you want Gemini to index instead."
+                      : "Indexing runs on Gemini: your key if you add one here, otherwise the free server key (counts toward the daily index limit)."
+                    : `${info.label} key answers questions only. Indexing needs embeddings, which run on Gemini: your key if you add one here, otherwise the free server key (counts toward the daily index limit).`}
                 </span>
+                {noSharedKey && keys.provider !== "openai" && !keys.indexGemini.trim() && (
+                  <span className="rounded-md border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                    This site has no shared key right now, so indexing needs a Gemini key here. Get a free one at{" "}
+                    <a className="underline underline-offset-2" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                      aistudio.google.com/apikey
+                    </a>
+                    .
+                  </span>
+                )}
               </label>
             )}
 

@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import devPilot.backend.exceptions.BadRequestException;
 import devPilot.backend.exceptions.ServiceUnavailableException;
 
 /**
@@ -13,14 +14,21 @@ import devPilot.backend.exceptions.ServiceUnavailableException;
  * tier; several comma-separated keys act as fallbacks), inside the daily free limits. OPENAI_API_KEY works as the server key too.
  * A visitor who wants more can send their own Gemini key (indexing and answers) and/or a
  * key for answers from OpenAI, Claude or OpenCode Zen; those requests skip the daily
- * limit. Embeddings always stay on the server's embedding provider (Gemini), so a repo
- * indexed once stays searchable for everyone.
+ * limit. Indexing prefers Gemini (the visitor's, else the server's), so a repo indexed
+ * once stays searchable for everyone. When neither exists, a visitor's own OpenAI key
+ * indexes with OpenAI embeddings instead. Each repo records which store its vectors are
+ * in, and questions are searched in that store only.
  */
 @Component
 public class AiKeyResolver {
 
     public static final String NOT_CONFIGURED =
-            "This DevPilot server has no AI key configured yet. The site owner needs to set GEMINI_API_KEY.";
+            "This site has no shared AI key right now. Add your own under 'Use your own key': "
+                    + "a free Gemini key (aistudio.google.com/apikey) or an OpenAI key.";
+
+    public static final String NEEDS_INDEX_KEY =
+            "Indexing needs a Gemini or OpenAI key, and this site has no shared one right now. "
+                    + "Add a free Gemini key under 'Use your own key' (aistudio.google.com/apikey).";
 
     private final String geminiKey;
     private final String openaiKey;
@@ -64,12 +72,50 @@ public class AiKeyResolver {
         return requireKey();
     }
 
-    /** Embedding key for this request: the visitor's Gemini key when given, else the server's. */
+    /**
+     * Key for indexing: the visitor's Gemini key, else the server's key, else the visitor's
+     * own OpenAI key (OpenAI embeddings). Claude and OpenCode Zen have no embeddings.
+     */
     public UserAiKey embeddingKey(VisitorKeys visitor) {
-        if (visitor.hasGemini() && provider() == AiProvider.GEMINI) {
+        if (visitor.hasGemini() && (provider() == AiProvider.GEMINI || !configured())) {
             return UserAiKey.visitor(AiProvider.GEMINI, visitor.gemini());
         }
-        return requireKey();
+        if (configured()) {
+            return requireKey();
+        }
+        if (visitor.hasOpenAiKey()) {
+            return UserAiKey.visitor(AiProvider.OPENAI, visitor.chatKey());
+        }
+        throw new ServiceUnavailableException(visitor.any() ? NEEDS_INDEX_KEY : NOT_CONFIGURED);
+    }
+
+    /**
+     * Key for searching a repo's vectors: it must be the provider whose embeddings built
+     * that index (store = the repo's embedding provider), since the two stores never mix.
+     */
+    public UserAiKey searchKey(String store, VisitorKeys visitor) {
+        if (store == null || store.isBlank()) {
+            return embeddingKey(visitor);
+        }
+        AiProvider provider = AiProvider.parse(store);
+        if (provider == AiProvider.GEMINI) {
+            if (visitor.hasGemini()) {
+                return UserAiKey.visitor(AiProvider.GEMINI, visitor.gemini());
+            }
+            if (!geminiKey.isEmpty()) {
+                return new UserAiKey(AiProvider.GEMINI, geminiKey);
+            }
+            throw new BadRequestException("This repo was indexed with Gemini. To chat with it, add a free Gemini key "
+                    + "under 'Use your own key' (aistudio.google.com/apikey), or index it again with your OpenAI key.");
+        }
+        if (!openaiKey.isEmpty()) {
+            return new UserAiKey(AiProvider.OPENAI, openaiKey);
+        }
+        if (visitor.hasOpenAiKey()) {
+            return UserAiKey.visitor(AiProvider.OPENAI, visitor.chatKey());
+        }
+        throw new BadRequestException("This repo was indexed with an OpenAI key. To chat with it, add an OpenAI key "
+                + "under 'Use your own key', or index it again with a Gemini key.");
     }
 
     /**

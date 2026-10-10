@@ -72,14 +72,16 @@ public class RepoController {
     public ResponseEntity<RepositoryResponse> index(
             @PathVariable UUID id,
             @RequestHeader(Visitors.HEADER) String visitor,
-            @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey) {
+            @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey,
+            @RequestHeader(name = VisitorKeys.CHAT_PROVIDER_HEADER, required = false) String chatProvider,
+            @RequestHeader(name = VisitorKeys.CHAT_KEY_HEADER, required = false) String chatKey) {
         UUID visitorId = Visitors.parse(visitor);
         Repository current = repoService.requireVisible(id, visitorId);
         // Repos are shared. If someone else is already indexing this one, just follow along.
         if (current.getIndexStatus() == IndexStatus.INDEXING) {
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(current));
         }
-        UserAiKey key = aiKeyResolver.embeddingKey(VisitorKeys.geminiOnly(geminiKey));
+        UserAiKey key = aiKeyResolver.embeddingKey(new VisitorKeys(geminiKey, chatProvider, chatKey, null));
         boolean free = !key.visitor();
         if (free) {
             usageLimiter.consume(visitorId, UsageLimiter.Kind.INDEX);
@@ -109,9 +111,11 @@ public class RepoController {
     public ResponseEntity<RepositoryResponse> resumeIndex(
             @PathVariable UUID id,
             @RequestHeader(Visitors.HEADER) String visitor,
-            @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey) {
+            @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey,
+            @RequestHeader(name = VisitorKeys.CHAT_PROVIDER_HEADER, required = false) String chatProvider,
+            @RequestHeader(name = VisitorKeys.CHAT_KEY_HEADER, required = false) String chatKey) {
         repoService.requireVisible(id, Visitors.parse(visitor));
-        UserAiKey key = aiKeyResolver.embeddingKey(VisitorKeys.geminiOnly(geminiKey));
+        UserAiKey key = aiKeyResolver.embeddingKey(new VisitorKeys(geminiKey, chatProvider, chatKey, null));
         Repository repo = indexingService.resumeIndexing(id, key);
         indexingService.resumeAsync(id, key);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));

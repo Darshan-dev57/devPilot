@@ -27,6 +27,7 @@ import devPilot.backend.services.ai.AiErrors;
 import devPilot.backend.services.ai.AiKeyResolver;
 import devPilot.backend.services.ai.AiKeyResolver.UserAiKey;
 import devPilot.backend.services.ai.AiModelFactory;
+import devPilot.backend.services.ai.AiProvider;
 import devPilot.backend.services.ai.RagSettings;
 import devPilot.backend.services.ai.RetryingEmbeddingModel;
 import devPilot.backend.services.github.GitHubException;
@@ -170,6 +171,9 @@ public class IndexingService {
                 : gitHubApiClient.getHeadSha(repo.getOwner(), repo.getName(), repo.getDefaultBranch());
 
         boolean sameProvider = providerName.equals(repo.getEmbeddingProvider());
+        // A paused run picked up with another provider's key starts over in that store:
+        // one index never holds vectors from two embedding models.
+        boolean continuing = resume && sameProvider;
         // A full run clears indexedSha first, so a non-null value means a complete earlier
         // index exists (a paused incremental run is simply redone; it is idempotent).
         boolean hasIndex = repo.getIndexedSha() != null && sameProvider;
@@ -187,7 +191,7 @@ public class IndexingService {
             }
             log.info("Compare unavailable for {}, falling back to a full index", repo.getFullName());
         }
-        return indexEverything(repo, store, head, providerName, resume) ? MODE_FULL : null;
+        return indexEverything(repo, store, head, providerName, continuing) ? MODE_FULL : null;
     }
 
     private boolean indexEverything(Repository repo, VectorStore store, String head, String providerName, boolean resume) {
@@ -198,6 +202,7 @@ public class IndexingService {
         } else {
             phase(repoId, "Clearing old vectors");
             deleteVectors(store, repoId, null);
+            deleteOtherStores(repoId, providerName);
             update(repoId, r -> {
                 r.setIndexedSha(null);
                 r.setPendingSha(head);
@@ -307,6 +312,20 @@ public class IndexingService {
                 : b.and(b.eq(RagSettings.METADATA_REPO_ID, repoId.toString()),
                         b.eq(RagSettings.METADATA_FILE_PATH, filePath)).build();
         store.delete(filter);
+    }
+
+    /** Drops this repo's vectors from every other provider's table, so only one store holds it. */
+    private void deleteOtherStores(UUID repoId, String providerName) {
+        for (AiProvider provider : AiProvider.values()) {
+            if (!provider.embeds() || provider.name().equals(providerName)) {
+                continue;
+            }
+            String table = provider.tableName();
+            Boolean exists = jdbcTemplate.queryForObject("select to_regclass(?) is not null", Boolean.class, "public." + table);
+            if (Boolean.TRUE.equals(exists)) {
+                jdbcTemplate.update("delete from public." + table + " where metadata->>'repoId' = ?", repoId.toString());
+            }
+        }
     }
 
     private int countVectors(UserAiKey key, UUID repoId) {

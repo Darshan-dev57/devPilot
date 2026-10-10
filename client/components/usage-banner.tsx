@@ -27,8 +27,23 @@ export function UsageBanner({ kind = "both", className }: { kind?: "both" | "que
         <div className="flex items-start gap-3">
           <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
           <p>
-            This server has no AI key yet. The owner needs to set <code className="font-mono">GEMINI_API_KEY</code>, or
-            you can use your own key.
+            This site has no shared AI key right now. Add your own Gemini or OpenAI key to index repos and ask
+            questions.
+          </p>
+        </div>
+        <OwnKeyButton />
+      </div>
+    );
+  }
+
+  if (!data.canIndex && kind === "both") {
+    return (
+      <div className={cn("flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-4 text-sm sm:flex-row sm:items-center sm:justify-between", className)}>
+        <div className="flex items-start gap-3">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
+          <p>
+            {`Your ${data.provider} key answers questions, but indexing needs a Gemini or OpenAI key. `}
+            Add a free Gemini key under &ldquo;Use your own key&rdquo; (aistudio.google.com/apikey).
           </p>
         </div>
         <OwnKeyButton />
@@ -37,11 +52,11 @@ export function UsageBanner({ kind = "both", className }: { kind?: "both" | "que
   }
 
   const outOfQuestions = data.questionsLeft === 0 && !own;
-  const outOfIndexes = data.indexesLeft === 0 && kind === "both" && !data.ownGeminiKey;
+  const outOfIndexes = data.indexesLeft === 0 && kind === "both" && !data.ownIndexKey;
   const out = outOfQuestions || outOfIndexes;
 
   let text: string;
-  if (own && (data.ownGeminiKey || kind === "questions")) {
+  if (own && (data.ownIndexKey || kind === "questions")) {
     text = `Your own ${data.provider} key, no daily limit`;
   } else if (own) {
     // Answers on their key; indexing still runs on the free server key.
