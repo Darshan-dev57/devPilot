@@ -68,7 +68,7 @@ public class IndexingService {
     private long maxFileBytes;
 
     public Repository startIndexing(UUID repoId, String apiKey, String provider) {
-        aiKeyResolver.requireKey(apiKey, provider);
+        UserAiKey key = aiKeyResolver.requireKey(apiKey, provider);
         Repository repo = require(repoId);
         if (repo.getIndexStatus() == IndexStatus.INDEXING) {
             throw new BadRequestException("Repository is already being indexed");
@@ -76,6 +76,7 @@ public class IndexingService {
         if (repo.getIndexStatus() == IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is paused. Resume it to continue");
         }
+        aiModelFactory.verifyKey(key.provider(), key.apiKey());
         pauseFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
         repo.setIndexPhase("Queued");
@@ -106,11 +107,12 @@ public class IndexingService {
     }
 
     public Repository resumeIndexing(UUID repoId, String apiKey, String provider) {
-        aiKeyResolver.requireKey(apiKey, provider);
+        UserAiKey key = aiKeyResolver.requireKey(apiKey, provider);
         Repository repo = require(repoId);
         if (repo.getIndexStatus() != IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is not paused");
         }
+        aiModelFactory.verifyKey(key.provider(), key.apiKey());
         pauseFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
         repo.setIndexPhase("Resuming");

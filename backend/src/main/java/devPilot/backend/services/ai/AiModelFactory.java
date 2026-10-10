@@ -27,6 +27,7 @@ import com.openai.client.OpenAIClientImpl;
 import com.openai.core.ClientOptions;
 import com.openai.core.http.HttpClient;
 
+import devPilot.backend.exceptions.BadRequestException;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -112,6 +113,19 @@ public class AiModelFactory {
             return provider + ":" + HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException(ex);
+        }
+    }
+
+    /**
+     * Makes one tiny embedding call to prove the key works before any index job starts.
+     * Without this, a typo'd key would only fail after the job had already cleared the
+     * repo's existing vectors, breaking chat for everyone using that repo.
+     */
+    public void verifyKey(AiProvider provider, String apiKey) {
+        try {
+            embeddingModel(provider, apiKey).embed("ping");
+        } catch (RuntimeException ex) {
+            throw new BadRequestException(AiErrors.describe(ex, provider));
         }
     }
 
