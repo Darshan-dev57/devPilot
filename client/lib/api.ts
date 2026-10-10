@@ -1,4 +1,5 @@
 import { ownKeyHeaders } from "@/lib/own-keys";
+import { isVisitorIdRejection, readVisitorId, resetVisitorId } from "@/lib/visitor-id";
 
 export type IndexStatus = "PENDING" | "INDEXING" | "PAUSED" | "READY" | "FAILED";
 
@@ -83,33 +84,23 @@ export type ChatMessage = {
   createdAt: string;
 };
 
-const VISITOR_STORAGE_KEY = "devpilot_visitor_id";
-
-function randomUuid(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  // randomUUID needs a secure context (https or localhost); build a v4 UUID by hand otherwise.
-  const b = crypto.getRandomValues(new Uint8Array(16));
-  b[6] = (b[6] & 0x0f) | 0x40;
-  b[8] = (b[8] & 0x3f) | 0x80;
-  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
 /**
  * Anonymous id for this browser, made once and kept in localStorage. It is not a login;
  * it only keeps each visitor's repo list and chats separate from everyone else's.
+ * A stored value that is not a UUID is replaced, so the server never sees it.
  */
 export function getVisitorId(): string {
   if (typeof window === "undefined") return "";
   // Older builds kept a pasted AI key here. Keys now live only on the server.
   localStorage.removeItem("devpilot_ai_key");
   localStorage.removeItem("devpilot_ai_provider");
-  let id = localStorage.getItem(VISITOR_STORAGE_KEY);
-  if (!id) {
-    id = randomUuid();
-    localStorage.setItem(VISITOR_STORAGE_KEY, id);
-  }
-  return id;
+  return readVisitorId(localStorage);
+}
+
+/** Replaces the visitor id after the server rejected it. */
+export function renewVisitorId(): string {
+  if (typeof window === "undefined") return "";
+  return resetVisitorId(localStorage);
 }
 
 export class ApiError extends Error {
@@ -138,6 +129,7 @@ async function parseError(res: Response): Promise<string> {
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
+  retried = false,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -152,7 +144,13 @@ export async function apiFetch<T>(
   });
 
   if (!res.ok) {
-    throw new ApiError(res.status, await parseError(res));
+    const message = await parseError(res);
+    if (!retried && isVisitorIdRejection(res.status, message)) {
+      // The server did nothing with the request; try once more with a fresh id.
+      renewVisitorId();
+      return apiFetch<T>(path, init, true);
+    }
+    throw new ApiError(res.status, message);
   }
 
   if (res.status === 204) {
