@@ -5,7 +5,8 @@ package devPilot.backend.services.ai;
  * <ul>
  *   <li>X-Gemini-Key: their Gemini key, for indexing (embeddings) and, by default, answers.</li>
  *   <li>X-Chat-Provider, X-Chat-Key, X-Chat-Model: another provider for answers
- *       (openai, claude or opencode), its key and model.</li>
+ *       (openai, claude or opencode), its key and model. An OpenAI key also indexes when
+ *       there is no Gemini key at all.</li>
  * </ul>
  * They live only for that request (or that index job) and are never stored or logged.
  */
@@ -35,6 +36,11 @@ public record VisitorKeys(String gemini, String chatProvider, String chatKey, St
     /** True when answers should come from the visitor's own non-Gemini key. */
     public boolean hasChatKey() {
         return !chatKey.isEmpty() && !chatProvider.isEmpty() && !"gemini".equals(chatProvider);
+    }
+
+    /** True when the visitor's own key is an OpenAI one, which can also index (OpenAI embeddings). */
+    public boolean hasOpenAiKey() {
+        return hasChatKey() && "openai".equals(chatProvider);
     }
 
     public AiProvider chatProviderEnum() {
