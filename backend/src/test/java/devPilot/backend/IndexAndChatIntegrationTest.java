@@ -191,9 +191,22 @@ class IndexAndChatIntegrationTest {
         HttpResponse<String> third = post(path, "{\"content\":\"third question\"}", null);
         assertThat(third.statusCode()).isEqualTo(429);
         assertThat(json.readTree(third.body()).get("message").asString())
-                .isEqualTo("You've used today's 2 free questions. Come back tomorrow.");
+                .isEqualTo("You've used today's 2 free questions. Come back tomorrow, or use your own key.");
         // The refused question is not stored in the chat history.
         assertThat(json.readTree(get("/api/chat/sessions/" + sessionId, VISITOR_A).body()).size()).isEqualTo(2);
+
+        // With their own key the visitor goes past the limit, and the key is used only for that request.
+        HttpResponse<String> own = postWithHeader(path, "{\"content\":\"fourth question\"}", "X-Gemini-Key", "visitor-own-key-123");
+        assertThat(own.statusCode()).isEqualTo(200);
+        assertThat(own.body()).contains("event:assistant_message");
+        assertThat(models.chatKeys).contains("GEMINI:visitor-own-key-123");
+        Integer stored = jdbc.queryForObject("""
+                select count(*) from (
+                    select content as t from chat_messages union all
+                    select coalesce(citations::text, '') from chat_messages union all
+                    select coalesce(error_message, '') from repositories) x
+                where t like '%visitor-own-key-123%'""", Integer.class);
+        assertThat(stored).as("the visitor's key is never written to the database").isZero();
 
         JsonNode usage = json.readTree(get("/api/usage", VISITOR_A).body());
         assertThat(usage.get("questionsLeft").asInt()).isZero();
@@ -329,5 +342,16 @@ class IndexAndChatIntegrationTest {
                 .header("X-Visitor-Id", visitor)
                 .POST(HttpRequest.BodyPublishers.ofString(body));
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    HttpResponse<String> postWithHeader(String path, String body, String header, String value) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri(path))
+                .timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "application/json")
+                .header("X-Visitor-Id", VISITOR_A)
+                .header(header, value)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }

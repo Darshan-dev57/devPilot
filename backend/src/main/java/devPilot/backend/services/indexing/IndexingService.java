@@ -72,12 +72,15 @@ public class IndexingService {
     private int maxFiles;
 
     public Repository startIndexing(UUID repoId) {
-        UserAiKey key = aiKeyResolver.requireKey();
+        return startIndexing(repoId, aiKeyResolver.requireKey());
+    }
+
+    public Repository startIndexing(UUID repoId, UserAiKey key) {
         Repository repo = require(repoId);
         if (repo.getIndexStatus() == IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is paused. Resume it to continue");
         }
-        aiModelFactory.verifyKey(key.provider(), key.apiKey());
+        aiModelFactory.verifyKey(key);
         pauseFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
         repo.setIndexPhase("Queued");
@@ -89,13 +92,13 @@ public class IndexingService {
     }
 
     @Async("indexingExecutor")
-    public void indexAsync(UUID repoId) {
-        run(repoId, false);
+    public void indexAsync(UUID repoId, UserAiKey key) {
+        run(repoId, false, key);
     }
 
     @Async("indexingExecutor")
-    public void resumeAsync(UUID repoId) {
-        run(repoId, true);
+    public void resumeAsync(UUID repoId, UserAiKey key) {
+        run(repoId, true, key);
     }
 
     public Repository pauseIndexing(UUID repoId) {
@@ -107,13 +110,12 @@ public class IndexingService {
         return repo;
     }
 
-    public Repository resumeIndexing(UUID repoId) {
-        UserAiKey key = aiKeyResolver.requireKey();
+    public Repository resumeIndexing(UUID repoId, UserAiKey key) {
         Repository repo = require(repoId);
         if (repo.getIndexStatus() != IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is not paused");
         }
-        aiModelFactory.verifyKey(key.provider(), key.apiKey());
+        aiModelFactory.verifyKey(key);
         pauseFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
         repo.setIndexPhase("Resuming");
@@ -124,7 +126,11 @@ public class IndexingService {
 
     /** Runs one index job synchronously. Public so tests can drive it without @Async. */
     public void run(UUID repoId, boolean resume) {
-        UserAiKey key = aiKeyResolver.requireKey();
+        run(repoId, resume, aiKeyResolver.requireKey());
+    }
+
+    /** The key may be a visitor's own; it lives only as long as this job and is never stored. */
+    public void run(UUID repoId, boolean resume, UserAiKey key) {
         long started = System.nanoTime();
         RetryingEmbeddingModel.WAIT_LISTENER.set(message -> phase(repoId, message));
         try {
@@ -144,7 +150,7 @@ public class IndexingService {
                 });
             } else {
                 log.error("Indexing failed for repo {}", repoId, ex);
-                markFailed(repoId, AiErrors.describe(ex, key.provider()));
+                markFailed(repoId, AiErrors.describe(ex, key.provider(), key.visitor()));
             }
         } finally {
             RetryingEmbeddingModel.WAIT_LISTENER.remove();
@@ -155,7 +161,7 @@ public class IndexingService {
     /** Returns the mode that finished, or null when the job was paused. */
     private String index(UUID repoId, UserAiKey key, boolean resume) {
         Repository repo = require(repoId);
-        VectorStore store = aiModelFactory.vectorStore(key.provider(), key.apiKey());
+        VectorStore store = aiModelFactory.vectorStore(key);
         String providerName = key.provider().name();
 
         phase(repoId, "Checking latest commit");

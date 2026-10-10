@@ -21,6 +21,7 @@ import devPilot.backend.dto.ChatSessionResponse;
 import devPilot.backend.dto.CreateChatSessionRequest;
 import devPilot.backend.services.ChatService;
 import devPilot.backend.services.Visitors;
+import devPilot.backend.services.ai.VisitorKeys;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -53,7 +54,11 @@ public class ChatController {
     public SseEmitter sendMessage(
             @PathVariable UUID id,
             @Valid @RequestBody ChatMessageRequest request,
-            @RequestHeader(Visitors.HEADER) String visitor) {
-        return chatService.streamReply(id, Visitors.parse(visitor), request.content());
+            @RequestHeader(Visitors.HEADER) String visitor,
+            @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey,
+            @RequestHeader(name = VisitorKeys.OPENCODE_HEADER, required = false) String opencodeKey,
+            @RequestHeader(name = VisitorKeys.OPENCODE_MODEL_HEADER, required = false) String opencodeModel) {
+        return chatService.streamReply(id, Visitors.parse(visitor), request.content(),
+                new VisitorKeys(geminiKey, opencodeKey, opencodeModel));
     }
 }
