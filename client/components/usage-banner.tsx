@@ -42,8 +42,8 @@ export function UsageBanner({ kind = "both", className }: { kind?: "both" | "que
         <div className="flex items-start gap-3">
           <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
           <p>
-            Your {data.provider} key answers questions, but indexing needs a Gemini or OpenAI key. Add a free Gemini
-            key under &ldquo;Use your own key&rdquo; (aistudio.google.com/apikey).
+            {`Your ${data.provider} key answers questions, but indexing needs a Gemini or OpenAI key. `}
+            Add a free Gemini key under &ldquo;Use your own key&rdquo; (aistudio.google.com/apikey).
           </p>
         </div>
         <OwnKeyButton />
