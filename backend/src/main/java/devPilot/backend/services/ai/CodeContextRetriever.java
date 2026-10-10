@@ -1,7 +1,9 @@
 package devPilot.backend.services.ai;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CodeContextRetriever {
     private static final String NO_MATCHES = "(no matching code chunks found)";
+    private static final int PREVIOUS_QUESTION_CHARS = 1000;
 
     /** Hits in one file at most this many lines apart are shown as one chip. */
     private static final int NEARBY_LINES = 20;
@@ -30,18 +33,60 @@ public class CodeContextRetriever {
      * Stores are built per request in AiModelFactory (each visitor brings their own key).
      */
     public RetrievedContext retrieve(VectorStore store, UUID repositoryId, String question) {
+        return retrieve(store, repositoryId, question, null);
+    }
+
+    /**
+     * Same, for a question asked after an earlier one in the same chat. A follow-up such as
+     * "and where is it registered?" names nothing to search for, so a second search runs on
+     * the earlier question plus this one. Most slots still go to hits for this question alone,
+     * so a change of topic keeps its own context.
+     */
+    public RetrievedContext retrieve(VectorStore store, UUID repositoryId, String question, String previousQuestion) {
+        List<Document> direct = search(store, repositoryId, question);
+        if (previousQuestion == null || previousQuestion.isBlank()) {
+            return build(direct);
+        }
+        String combined = clip(previousQuestion) + "\n" + question;
+        return build(merge(direct, search(store, repositoryId, combined)));
+    }
+
+    private List<Document> search(VectorStore store, UUID repositoryId, String query) {
         var filter = new FilterExpressionBuilder()
                 .eq(RagSettings.METADATA_REPO_ID, repositoryId.toString())
                 .build();
 
         var search = SearchRequest.builder()
-                .query(question)
+                .query(query)
                 .topK(RagSettings.TOP_K_CHUNKS)
                 .filterExpression(filter)
                 .build();
 
-        List<Document> documents = store.similaritySearch(search);
-        return build(documents);
+        return store.similaritySearch(search);
+    }
+
+    private static String clip(String text) {
+        return text.length() <= PREVIOUS_QUESTION_CHARS ? text : text.substring(0, PREVIOUS_QUESTION_CHARS);
+    }
+
+    /** Visible for tests: the top direct hits first, then follow-up hits, then the rest, without repeats. */
+    static List<Document> merge(List<Document> direct, List<Document> followUp) {
+        int directFirst = RagSettings.TOP_K_CHUNKS - RagSettings.TOP_K_CHUNKS / 3;
+        Map<String, Document> merged = new LinkedHashMap<>();
+        direct.stream().limit(directFirst).forEach(d -> merged.putIfAbsent(d.getId(), d));
+        for (Document d : followUp) {
+            if (merged.size() >= RagSettings.TOP_K_CHUNKS) {
+                break;
+            }
+            merged.putIfAbsent(d.getId(), d);
+        }
+        for (Document d : direct) {
+            if (merged.size() >= RagSettings.TOP_K_CHUNKS) {
+                break;
+            }
+            merged.putIfAbsent(d.getId(), d);
+        }
+        return new ArrayList<>(merged.values());
     }
 
     /** Visible for tests: turns ranked chunks into prompt context and citation chips. */
