@@ -1,9 +1,11 @@
 package devPilot.backend.exceptions;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -41,9 +43,35 @@ public class GlobalExceptionHandler {
     ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
-                .map(err -> err.getDefaultMessage())
-                .orElse("Validation failed");
+                .map(GlobalExceptionHandler::readable)
+                .orElse("The request is missing something. Check it and try again.");
         return error(HttpStatus.BAD_REQUEST, message);
+    }
+
+    /**
+     * A field error as a sentence a person can act on. DTOs set their own messages; the bean
+     * validation defaults ("must not be blank") are turned into "Content is required." so a raw
+     * constraint text never reaches the screen.
+     */
+    static String readable(FieldError err) {
+        String message = err.getDefaultMessage();
+        String field = fieldLabel(err.getField());
+        if (message == null || message.isBlank()) {
+            return field + " is not valid.";
+        }
+        if (message.startsWith("must not be ")) {
+            return field + " is required.";
+        }
+        if (message.startsWith("must ") || message.startsWith("size must ")) {
+            return field + " " + message + ".";
+        }
+        return message;
+    }
+
+    /** "repositoryId" becomes "Repository id". */
+    private static String fieldLabel(String field) {
+        String words = field.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT);
+        return words.isEmpty() ? "A field" : Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
     @ExceptionHandler(TooManyRequestsException.class)

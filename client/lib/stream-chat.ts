@@ -1,10 +1,21 @@
 import {
   getApiBaseUrl,
   getVisitorId,
+  renewVisitorId,
   ApiError,
   type ChatMessage,
 } from "@/lib/api";
 import { ownKeyHeaders } from "@/lib/own-keys";
+import { isVisitorIdRejection } from "@/lib/visitor-id";
+
+async function errorMessage(res: Response): Promise<string> {
+  try {
+    const data = await res.json();
+    return data.message ?? data.error ?? res.statusText;
+  } catch {
+    return res.statusText;
+  }
+}
 
 export type StreamChatHandlers = {
   onUserMessage?: (message: ChatMessage) => void;
@@ -22,30 +33,27 @@ export async function streamChatMessage(
 ): Promise<void> {
   // Streaming uses raw fetch rather than apiFetch because the response body is
   // consumed as a stream, not as JSON. The visitor's own keys ride along only if set.
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-Visitor-Id": getVisitorId(),
-    ...ownKeyHeaders(),
-  };
-
-  const res = await fetch(
-    `${getApiBaseUrl()}/api/chat/sessions/${sessionId}/messages`,
-    {
+  const send = () =>
+    fetch(`${getApiBaseUrl()}/api/chat/sessions/${sessionId}/messages`, {
       method: "POST",
-      headers,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Visitor-Id": getVisitorId(),
+        ...ownKeyHeaders(),
+      },
       body: JSON.stringify({ content }),
       signal: handlers.signal,
-    }
-  );
+    });
 
+  let res = await send();
+  let message = res.ok ? "" : await errorMessage(res);
+  if (!res.ok && isVisitorIdRejection(res.status, message)) {
+    // Rejected before anything ran; send once more with a fresh visitor id.
+    renewVisitorId();
+    res = await send();
+    message = res.ok ? "" : await errorMessage(res);
+  }
   if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const data = await res.json();
-      message = data.message ?? data.error ?? message;
-    } catch {
-      // ignore
-    }
     throw new ApiError(res.status, message);
   }
 

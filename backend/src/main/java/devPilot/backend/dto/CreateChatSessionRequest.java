@@ -5,6 +5,6 @@ import java.util.UUID;
 import jakarta.validation.constraints.NotNull;
 
 public record CreateChatSessionRequest(
-        @NotNull UUID repositoryId,
+        @NotNull(message = "Pick a repository to chat with.") UUID repositoryId,
         String title) {
 }
