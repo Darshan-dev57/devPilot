@@ -7,52 +7,48 @@ import org.springframework.stereotype.Component;
 import devPilot.backend.exceptions.ServiceUnavailableException;
 
 /**
- * The AI keys this server uses, set by the operator in environment variables.
- * Visitors never paste a key.
+ * Which AI keys a request uses.
  *
- * <p>GEMINI_API_KEY is the default path (Google's Gemini API has a free tier).
- * OPENAI_API_KEY works too, and AI_PROVIDER=ollama needs no key at all.
- * AI_PROVIDER=opencode answers with an OpenCode Zen model (OPENCODE_API_KEY) while
- * embeddings stay on Gemini, or on AI_EMBEDDING_PROVIDER if that is set.
+ * <p>By default everything runs on the server owner's one Gemini key (GEMINI_API_KEY,
+ * free tier), inside the daily free limits. OPENAI_API_KEY works as the server key too.
+ * A visitor who wants more can send their own Gemini key and/or their own OpenCode Zen
+ * key; those requests run on the visitor's key and skip the daily limit. OpenCode Zen is
+ * a visitor-key option only: its free models refuse calls from outside the OpenCode app.
  */
 @Component
 public class AiKeyResolver {
 
     public static final String NOT_CONFIGURED =
-            "This DevPilot server has no AI key configured yet. The site owner needs to set GEMINI_API_KEY (or OPENAI_API_KEY, or AI_PROVIDER=ollama).";
-    public static final String NO_OPENCODE_KEY =
-            "This DevPilot server is set to answer with OpenCode Zen but has no key. The site owner needs to set OPENCODE_API_KEY.";
+            "This DevPilot server has no AI key configured yet. The site owner needs to set GEMINI_API_KEY.";
 
     private final String geminiKey;
     private final String openaiKey;
-    private final String opencodeKey;
     private final String preferred;
     private final String embeddingPreferred;
 
     public AiKeyResolver(String geminiKey, String openaiKey, String preferred) {
-        this(geminiKey, openaiKey, "", preferred, "");
+        this(geminiKey, openaiKey, preferred, "");
     }
 
     @Autowired
     public AiKeyResolver(
             @Value("${app.ai.gemini.api-key:}") String geminiKey,
             @Value("${app.ai.openai.api-key:}") String openaiKey,
-            @Value("${app.ai.opencode.api-key:}") String opencodeKey,
             @Value("${app.ai.provider:}") String preferred,
             @Value("${app.ai.embedding-provider:}") String embeddingPreferred) {
         this.geminiKey = clean(geminiKey);
         this.openaiKey = clean(openaiKey);
-        this.opencodeKey = clean(opencodeKey);
         this.preferred = clean(preferred);
         this.embeddingPreferred = clean(embeddingPreferred);
+        if (!this.preferred.isEmpty() && !AiProvider.parse(this.preferred).embeds()) {
+            throw new IllegalStateException("AI_PROVIDER=" + this.preferred
+                    + " is not supported on the server. OpenCode Zen works only as a visitor's own key.");
+        }
     }
 
-    /** The key for embeddings (indexing and retrieval). */
+    /** The server's key for embeddings (indexing and retrieval). */
     public UserAiKey requireKey() {
         AiProvider provider = provider();
-        if (provider == AiProvider.OLLAMA) {
-            return new UserAiKey(provider, "ollama");
-        }
         String key = provider == AiProvider.GEMINI ? geminiKey : openaiKey;
         if (key.isEmpty()) {
             throw new ServiceUnavailableException(NOT_CONFIGURED);
@@ -60,61 +56,80 @@ public class AiKeyResolver {
         return new UserAiKey(provider, key);
     }
 
-    /** The key for writing answers. Same as {@link #requireKey()} unless chat runs on OpenCode Zen. */
+    /** The server's key for writing answers: the same provider and key as embeddings. */
     public UserAiKey requireChatKey() {
-        if (chatProvider() != AiProvider.OPENCODE) {
-            return requireKey();
-        }
-        if (opencodeKey.isEmpty()) {
-            throw new ServiceUnavailableException(NO_OPENCODE_KEY);
-        }
-        return new UserAiKey(AiProvider.OPENCODE, opencodeKey);
+        return requireKey();
     }
 
-    /** The embedding provider: the explicit setting, else whichever key is present (Gemini first). */
+    /** Embedding key for this request: the visitor's Gemini key when given, else the server's. */
+    public UserAiKey embeddingKey(VisitorKeys visitor) {
+        if (visitor.hasGemini() && provider() == AiProvider.GEMINI) {
+            return UserAiKey.visitor(AiProvider.GEMINI, visitor.gemini());
+        }
+        return requireKey();
+    }
+
+    /** Chat key for this request: the visitor's OpenCode key, else their Gemini key, else the server's. */
+    public UserAiKey chatKey(VisitorKeys visitor) {
+        if (visitor.hasOpencode()) {
+            return new UserAiKey(AiProvider.OPENCODE, visitor.opencode(), true,
+                    visitor.opencodeModel().isEmpty() ? null : visitor.opencodeModel());
+        }
+        if (visitor.hasGemini()) {
+            return UserAiKey.visitor(AiProvider.GEMINI, visitor.gemini());
+        }
+        return requireChatKey();
+    }
+
+    /** The embedding provider: AI_EMBEDDING_PROVIDER, else Gemini unless only an OpenAI key is set. */
     public AiProvider provider() {
         if (!embeddingPreferred.isEmpty()) {
-            return embeddingProvider(AiProvider.parse(embeddingPreferred));
+            AiProvider provider = AiProvider.parse(embeddingPreferred);
+            if (!provider.embeds()) {
+                throw new IllegalStateException("AI_EMBEDDING_PROVIDER cannot be " + provider.label()
+                        + ": it has no embeddings. Use gemini or openai.");
+            }
+            return provider;
         }
         if (!preferred.isEmpty() && AiProvider.parse(preferred).embeds()) {
             return AiProvider.parse(preferred);
         }
-        if (!preferred.isEmpty()) {
-            return AiProvider.GEMINI; // opencode: embeddings default to Gemini's free tier
+        if (geminiKey.isEmpty() && !openaiKey.isEmpty()) {
+            return AiProvider.OPENAI;
         }
-        if (!geminiKey.isEmpty()) {
-            return AiProvider.GEMINI;
-        }
-        return openaiKey.isEmpty() ? AiProvider.GEMINI : AiProvider.OPENAI;
+        return AiProvider.GEMINI;
     }
 
-    /** The provider that writes answers. */
+    /** The provider that writes answers with the server's key. */
     public AiProvider chatProvider() {
-        if (!preferred.isEmpty() && AiProvider.parse(preferred) == AiProvider.OPENCODE) {
-            return AiProvider.OPENCODE;
-        }
         return provider();
     }
 
     public boolean configured() {
-        AiProvider provider = provider();
-        boolean embeddings = provider == AiProvider.OLLAMA
-                || !(provider == AiProvider.GEMINI ? geminiKey : openaiKey).isEmpty();
-        return embeddings && (chatProvider() != AiProvider.OPENCODE || !opencodeKey.isEmpty());
-    }
-
-    private static AiProvider embeddingProvider(AiProvider provider) {
-        if (!provider.embeds()) {
-            throw new IllegalStateException("AI_EMBEDDING_PROVIDER cannot be " + provider.label()
-                    + ": it has no embeddings. Use gemini, openai or ollama.");
-        }
-        return provider;
+        return !(provider() == AiProvider.GEMINI ? geminiKey : openaiKey).isEmpty();
     }
 
     private static String clean(String value) {
         return value == null ? "" : value.trim();
     }
 
-    public record UserAiKey(AiProvider provider, String apiKey) {
+    /**
+     * A key, where it came from, and an optional model override (a visitor's OpenCode Zen
+     * model). toString never prints the key itself.
+     */
+    public record UserAiKey(AiProvider provider, String apiKey, boolean visitor, String model) {
+
+        public UserAiKey(AiProvider provider, String apiKey) {
+            this(provider, apiKey, false, null);
+        }
+
+        static UserAiKey visitor(AiProvider provider, String apiKey) {
+            return new UserAiKey(provider, apiKey, true, null);
+        }
+
+        @Override
+        public String toString() {
+            return "UserAiKey[" + provider + (visitor ? ", visitor key" : ", server key") + "]";
+        }
     }
 }

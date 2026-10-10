@@ -39,12 +39,12 @@ public class ChatStreamHandler {
     private long rateLimitBackoffMs = 2000;
 
     /**
-     * Stream using a caller-supplied model, e.g. a per-request BYOK model.
-     * No ChatModel field — models are built per-request in AiModelFactory.
+     * Stream an answer from the given model (the server's, or one built for a visitor's own key).
      */
     public SseEmitter stream(
             ChatModel model,
             AiProvider provider,
+            boolean visitorKey,
             UUID sessionId,
             ChatMessageResponse savedUserMessage,
             List<CitationDto> citations,
@@ -75,7 +75,7 @@ public class ChatStreamHandler {
                             token -> appendToken(emitter, fullReply, token),
                             err -> {
                                 log.warn("Chat stream error: {}", err.toString());
-                                sendErrorAndComplete(emitter, AiErrors.describe(err, provider));
+                                sendErrorAndComplete(emitter, AiErrors.describe(err, provider, visitorKey));
                             },
                             () -> completeStream(emitter, sessionId, fullReply, citations));
             // If the browser goes away mid-answer the answer still finishes and is saved, so
@@ -83,7 +83,7 @@ public class ChatStreamHandler {
             emitter.onTimeout(subscription::dispose);
         } catch (Exception ex) {
             log.warn("Chat stream setup failed: {}", ex.toString());
-            sendErrorAndComplete(emitter, AiErrors.describe(ex, provider));
+            sendErrorAndComplete(emitter, AiErrors.describe(ex, provider, visitorKey));
         }
 
         return emitter;

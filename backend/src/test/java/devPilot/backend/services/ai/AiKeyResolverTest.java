@@ -36,25 +36,36 @@ class AiKeyResolverTest {
     }
 
     @Test
-    void openCodeAnswersWhileGeminiEmbeds() {
-        var resolver = new AiKeyResolver("AIza-test", "", "zen-key", "opencode", "");
-        assertThat(resolver.requireKey().provider()).isEqualTo(AiProvider.GEMINI);
-        assertThat(resolver.requireChatKey()).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.OPENCODE, "zen-key"));
-        assertThat(resolver.configured()).isTrue();
+    void aVisitorsGeminiKeyIsUsedForEmbeddingsAndAnswers() {
+        var resolver = new AiKeyResolver("server-key", "", "");
+        var keys = new VisitorKeys(" visitor-gemini ", null, null);
+        assertThat(resolver.embeddingKey(keys)).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.GEMINI, "visitor-gemini", true, null));
+        assertThat(resolver.chatKey(keys).apiKey()).isEqualTo("visitor-gemini");
+        assertThat(resolver.chatKey(VisitorKeys.NONE)).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.GEMINI, "server-key"));
     }
 
     @Test
-    void openCodeWithoutItsKeyIsAClearServiceError() {
-        var resolver = new AiKeyResolver("AIza-test", "", "", "opencode", "");
-        assertThat(resolver.configured()).isFalse();
-        assertThatThrownBy(resolver::requireChatKey).hasMessageContaining("OPENCODE_API_KEY");
+    void aVisitorsOpenCodeKeyAnswersWhileTheServerEmbeds() {
+        var resolver = new AiKeyResolver("server-key", "", "");
+        var keys = new VisitorKeys(null, "zen-key", "qwen3.8-max");
+        var chat = resolver.chatKey(keys);
+        assertThat(chat.provider()).isEqualTo(AiProvider.OPENCODE);
+        assertThat(chat.visitor()).isTrue();
+        assertThat(chat.model()).isEqualTo("qwen3.8-max");
+        assertThat(resolver.embeddingKey(keys).visitor()).isFalse();
     }
 
     @Test
-    void openCodeCanEmbedWithOllamaLocally() {
-        var resolver = new AiKeyResolver("", "", "zen-key", "opencode", "ollama");
-        assertThat(resolver.requireKey().provider()).isEqualTo(AiProvider.OLLAMA);
-        assertThatThrownBy(() -> new AiKeyResolver("", "", "zen-key", "opencode", "opencode").provider())
-                .hasMessageContaining("no embeddings");
+    void keysNeverShowUpInToString() {
+        var resolver = new AiKeyResolver("server-secret", "", "");
+        assertThat(resolver.chatKey(new VisitorKeys("visitor-secret", "zen-secret", null)).toString()).doesNotContain("secret");
+        assertThat(resolver.requireKey().toString()).doesNotContain("secret");
+        assertThat(new VisitorKeys("visitor-secret", "zen-secret", "m").toString()).doesNotContain("secret");
+    }
+
+    @Test
+    void openCodeCannotBeTheServersProvider() {
+        assertThatThrownBy(() -> new AiKeyResolver("k", "", "opencode"))
+                .hasMessageContaining("visitor's own key");
     }
 }

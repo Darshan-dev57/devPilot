@@ -12,10 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
@@ -23,11 +20,11 @@ import org.springframework.web.client.RestClient;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
-import reactor.core.publisher.Flux;
 
 /**
  * OpenCode Zen speaks the OpenAI chat-completions API. There is no OpenCode key on the
- * build machine, so this runs the real client against a local fake of that API.
+ * build machine, so this runs the real client against a local fake of that API, with a
+ * visitor's key as DevPilot sends it.
  */
 class OpenCodeChatTest {
 
@@ -43,7 +40,7 @@ class OpenCodeChatTest {
         server.start();
         factory = new AiModelFactory(null, RestClient.builder());
         ReflectionTestUtils.setField(factory, "opencodeBaseUrl", "http://127.0.0.1:" + server.getAddress().getPort() + "/zen/v1");
-        ReflectionTestUtils.setField(factory, "opencodeChatModel", "longcat-2.5-preview-free");
+        ReflectionTestUtils.setField(factory, "opencodeChatModel", "deepseek-v4.1-flash");
     }
 
     @AfterEach
@@ -55,10 +52,11 @@ class OpenCodeChatTest {
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         requests.add(exchange.getRequestHeaders().getFirst("Authorization") + " " + body);
         if (modelWithdrawn) {
-            byte[] error = "{\"error\":{\"message\":\"Model longcat-2.5-preview-free not found\",\"type\":\"invalid_request_error\"}}"
+            // What Zen answered on 2026-10-10 for a free model called from outside its app.
+            byte[] error = "{\"type\":\"error\",\"error\":{\"type\":\"FreeTierError\",\"message\":\"OpenCode's free tier can only be used from within OpenCode\"}}"
                     .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(404, error.length);
+            exchange.sendResponseHeaders(403, error.length);
             exchange.getResponseBody().write(error);
             exchange.close();
             return;
@@ -67,7 +65,7 @@ class OpenCodeChatTest {
         exchange.sendResponseHeaders(200, 0);
         try (OutputStream out = exchange.getResponseBody()) {
             for (String piece : List.of("Owners are", " validated in", " OwnerController.")) {
-                out.write(("data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"longcat-2.5-preview-free\","
+                out.write(("data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"deepseek-v4.1-flash\","
                         + "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"" + piece
                         + "\"},\"finish_reason\":null}]}\n\n").getBytes(StandardCharsets.UTF_8));
                 out.flush();
@@ -84,41 +82,23 @@ class OpenCodeChatTest {
 
     @Test
     void streamsFromTheOpenAiCompatibleEndpointWithTheZenKeyAndModel() {
-        ChatModel model = factory.chatModel(AiProvider.OPENCODE, "zen-test-key");
+        ChatModel model = factory.chatModel(new AiKeyResolver.UserAiKey(AiProvider.OPENCODE, "zen-test-key", true, null));
         assertThat(streamed(model)).isEqualTo("Owners are validated in OwnerController.");
         assertThat(requests).hasSize(1);
-        assertThat(requests.get(0)).startsWith("Bearer zen-test-key ").contains("\"model\":\"longcat-2.5-preview-free\"");
+        assertThat(requests.get(0)).startsWith("Bearer zen-test-key ").contains("\"model\":\"deepseek-v4.1-flash\"");
     }
 
     @Test
-    void aWithdrawnFreeModelFallsBackToTheEmbeddingProvidersChatModel() {
-        modelWithdrawn = true;
-        ChatModel gemini = new ChatModel() {
-            @Override
-            public ChatResponse call(Prompt prompt) {
-                return new ChatResponse(List.of(new Generation(new AssistantMessage("answered by Gemini"))));
-            }
-
-            @Override
-            public Flux<ChatResponse> stream(Prompt prompt) {
-                return Flux.just(call(prompt));
-            }
-        };
-        ChatModel model = new FallbackChatModel(factory.chatModel(AiProvider.OPENCODE, "zen-test-key"), gemini, "OpenCode Zen");
-        assertThat(streamed(model)).isEqualTo("answered by Gemini");
-    }
-
-    @Test
-    void withoutAFallbackTheVisitorGetsAClearMessage() {
+    void aRefusedFreeModelGivesTheVisitorAClearMessage() {
         modelWithdrawn = true;
         Throwable error = null;
         try {
-            streamed(factory.chatModel(AiProvider.OPENCODE, "zen-test-key"));
+            streamed(factory.chatModel(new AiKeyResolver.UserAiKey(AiProvider.OPENCODE, "zen-test-key", true, null)));
         } catch (RuntimeException ex) {
             error = ex;
         }
         assertThat(error).isNotNull();
-        assertThat(AiErrors.describe(error, AiProvider.OPENCODE))
-                .startsWith("The free OpenCode Zen model is no longer available");
+        assertThat(AiErrors.describe(error, AiProvider.OPENCODE, true))
+                .startsWith("OpenCode Zen refused: its free models only work inside the OpenCode app.");
     }
 }
