@@ -25,7 +25,9 @@ import devPilot.backend.services.ai.RagSettings;
  *
  * <p>Every chunk records its line range, so answers can link to the exact lines on GitHub,
  * and a short header (file path, enclosing type, first declaration) is embedded with the
- * code, which helps retrieval match questions like "where is the rate limiter".
+ * code, which helps retrieval match questions like "where is the rate limiter". The enclosing
+ * type comes from {@link TypeScopes}, which tracks brace depth, so it stays right after an
+ * inner class closes and for any indentation.
  *
  * <p>It is a line-based heuristic, not a parser: it works the same way for Java, Kotlin,
  * TypeScript, Python, Go, Rust and similar languages, and degrades to plain line windows
@@ -53,9 +55,6 @@ public class CodeChunker {
 
     private static final Pattern MARKDOWN_HEADING = Pattern.compile("^#{1,3}\\s+\\S.*");
 
-    private static final Pattern TYPE_DECLARATION = Pattern.compile(
-            ".*\\b(class|interface|enum|record|object|struct|trait|impl)\\s+([A-Za-z_]\\w*).*");
-
     private static final Set<String> NOT_A_SIGNATURE = Set.of(
             "return", "new", "throw", "else", "if", "for", "while", "switch", "case", "catch",
             "await", "yield", "typeof", "delete", "do", "try", "assert", "import", "package", "using");
@@ -82,6 +81,7 @@ public class CodeChunker {
         String language = fileFilter.detectLanguage(filePath);
         String[] lines = content.replace("\r\n", "\n").split("\n", -1);
 
+        TypeScopes scopes = STRUCTURED.contains(language) ? TypeScopes.of(lines, language) : null;
         List<Document> documents = new ArrayList<>();
         int index = 0;
         for (Span span : split(lines, language)) {
@@ -89,7 +89,7 @@ public class CodeChunker {
             if (body.isBlank()) {
                 continue;
             }
-            String header = header(filePath, lines, span);
+            String header = header(filePath, scopes, span);
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(RagSettings.METADATA_REPO_ID, repoId);
             metadata.put(RagSettings.METADATA_FILE_PATH, filePath);
@@ -234,28 +234,14 @@ public class CodeChunker {
         return chunks;
     }
 
-    private static String header(String filePath, String[] lines, Span span) {
+    private static String header(String filePath, TypeScopes scopes, Span span) {
         StringBuilder header = new StringBuilder("File: ").append(filePath)
                 .append(" (lines ").append(span.start + 1).append('-').append(span.end).append(")\n");
-        String type = enclosingType(lines, span.start);
+        String type = scopes == null ? null : scopes.labelFor(span.start, span.end);
         if (type != null) {
             header.append("In: ").append(type).append('\n');
         }
         return header.append('\n').toString();
-    }
-
-    /** Nearest type declaration at or above {@code line}, e.g. "class IndexingService". */
-    private static String enclosingType(String[] lines, int line) {
-        for (int i = Math.min(line + 3, lines.length - 1); i >= 0; i--) {
-            if (indent(lines[i]) > 2) {
-                continue;
-            }
-            var matcher = TYPE_DECLARATION.matcher(lines[i]);
-            if (matcher.matches() && !lines[i].strip().startsWith("//") && !lines[i].strip().startsWith("*")) {
-                return matcher.group(1) + " " + matcher.group(2);
-            }
-        }
-        return null;
     }
 
     private static int indent(String line) {
