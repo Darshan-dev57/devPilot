@@ -74,6 +74,14 @@ public final class AiErrors {
         return name + " returned an error" + (status != null ? " (HTTP " + status + ")" : "") + ". Try again.";
     }
 
+    /** True for a provider hiccup worth one more try: HTTP 500/502/503/504/529 or "overloaded". */
+    public static boolean isTransient(Throwable error) {
+        Integer status = status(error);
+        String lower = text(error);
+        return eq(status, 500) || eq(status, 502) || eq(status, 503) || eq(status, 504) || eq(status, 529)
+                || lower.contains("overloaded") || lower.contains("\"unavailable\"");
+    }
+
     /** True for HTTP 429 or a provider's quota/rate-limit wording. */
     public static boolean isRateLimit(Throwable error) {
         String lower = text(error);
