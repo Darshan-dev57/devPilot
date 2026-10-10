@@ -34,6 +34,9 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env (free at aistudio.google.com/apikey)}
       LIMIT_QUESTIONS_PER_VISITOR: ${LIMIT_QUESTIONS_PER_VISITOR:-30}
       LIMIT_INDEXES_PER_VISITOR: ${LIMIT_INDEXES_PER_VISITOR:-5}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
+      OPENCODE_MODEL: ${OPENCODE_MODEL:-longcat-2.5-preview-free}
     expose:
       - "8080"
     restart: unless-stopped
