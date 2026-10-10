@@ -6,12 +6,12 @@ Vercel (frontend). Total cost: $0.
 
 ## Architecture
 
-No login required. Visitors paste a GitHub repo link → backend fetches files using a **server-side GitHub token** (you provide one free token) → index → chat. Each visitor brings their own AI key (OpenAI or Gemini), stored in their browser's localStorage and sent with each request via the `X-Api-Key` header.
+No login and no key pasting. Visitors paste a GitHub repo link → the backend downloads it with an optional **server-side GitHub token** → index → chat. The AI calls use **one free Gemini key that you set on the server**; per-visitor daily limits keep the free quota from running out (README, "Free tier and limits").
 
 ## Path A (recommended): Neon + Render + Vercel
 
 Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
-(Postgres). Each user still brings their own OpenAI/Gemini key in Settings.
+(Postgres). The Gemini key lives only in Render's environment.
 
 ### 1. Database — Neon (5 min)
 
@@ -29,8 +29,14 @@ Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
 ### 2. GitHub token (2 min)
 
 1. Go to github.com → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token.
-2. Select `repo` scope (for private repos) or just `public_repo` (for public repos only).
+2. Tick no scopes at all. DevPilot only reads public repos; the token just raises GitHub's limit from 60 to 5,000 calls an hour.
 3. Copy the token — you'll paste it into Render.
+
+### 2b. Gemini key (2 min)
+
+1. Open https://aistudio.google.com/apikey with a Google account and create a key. No card needed.
+2. Copy it — you'll paste it into Render as `GEMINI_API_KEY`. Never commit it.
+3. Read the free-tier data terms in the README before you go public.
 
 ### 3. Backend — Render (10 min + first build)
 
@@ -39,6 +45,8 @@ Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
 2. Fill the `sync: false` variables in the dashboard:
    - `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` — from step 1.
    - `APP_GITHUB_TOKEN` — from step 2.
+   - `GEMINI_API_KEY` — from step 2b.
+   - `APP_FRONTEND_URL` and `APP_CORS_ALLOWED_ORIGINS` — your Vercel URL from step 4.
 3. Deploy. First build takes ~8–10 min (Maven downloads). Health check:
    `https://<your-service>.onrender.com/actuator/health` → `{"status":"UP"}`.
 4. Note the backend URL: `https://<your-service>.onrender.com`.
@@ -55,7 +63,7 @@ Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
 
 ### 5. Use it
 
-Open the Vercel URL → paste a GitHub repo link → add your AI key in Settings → Index → Chat. No login required.
+Open the Vercel URL → paste a GitHub repo link → Index → Chat. No login, no key.
 
 Free Render services sleep after 15 min idle; Spring Boot then takes ~60s to
 wake. A free UptimeRobot monitor (no card) pinging
@@ -84,7 +92,7 @@ cloudflared tunnel --url http://localhost:80
 ```
 
 Caveats: your PC must stay on and online; the free `trycloudflare.com` URL
-changes on every restart, which breaks the GitHub OAuth callback. For a stable
+changes on every restart, so CORS (`APP_CORS_ALLOWED_ORIGINS`) needs updating each time. For a stable
 URL, put any domain you control on Cloudflare's free plan (no card) and create
 a named tunnel to `http://localhost:80` — then use that hostname as `DOMAIN`.
 

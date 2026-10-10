@@ -1,161 +1,122 @@
 # DevPilot
 
-DevPilot is a no-login AI code assistant. Paste any GitHub repository link, index it, and chat with it — answers stream back with file citations. No sign-up required.
+Ask any public GitHub repo how it works. Paste a link, DevPilot reads the code once, and you chat with it: answers stream in word by word, and every source is a link to the exact lines on GitHub.
 
-**Bring your own key:** each visitor picks OpenAI or Gemini and pastes their own key (stored in their browser's localStorage, never sent to our servers). The server operator needs no AI key, so the site can serve any number of users at zero AI cost.
+No sign-up and no key to paste. The server owner sets one free Gemini key; daily limits keep that free quota from running out.
 
-## Deploy as a website
+## What you can do
 
-Two guides, pick one:
+- **Paste a repo and index it.** DevPilot downloads it as one zip, splits the code at class and method boundaries and stores embeddings in Postgres (pgvector). Progress shows live as "x/y files".
+- **Ask in plain English.** "Where is the owner validated?", "Which endpoint adds a pet?" Answers cite `File.java:41-88` chips that open GitHub at the indexed commit.
+- **Re-index after new commits.** Only the changed files are embedded again. No change, no work.
+- **Your list stays yours.** Each browser gets an anonymous id, so you only see the repos you added. A repo two people add is indexed once and shared under the hood.
 
-- ➡️ **[docs/DEPLOY-FREE.md](docs/DEPLOY-FREE.md)** — ₹0, no credit card:
-  Neon (DB) + Render (backend) + Vercel (frontend). Best starting point.
-- ➡️ **[docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md)** — free Oracle Ampere ARM
-  VM with everything in one `docker-compose.prod.yml` (needs a card for
-  verification, serves unlimited users at full speed).
+## Run it locally
 
-Short version: fill 4 values in `.env` (domain, GitHub OAuth id/secret, DB password,
-encryptor secrets) and run `docker compose -f docker-compose.prod.yml up -d --build`.
-Visitors then just open the site, log in with GitHub, paste their OpenAI key in
-Settings, and start chatting.
-
-## Features
-
-- GitHub OAuth login (session based)
-- Repository dashboard with sync, search, and status filtering (`PENDING` / `INDEXING` / `READY` / `FAILED`)
-- Async code indexing into pgvector (filters, chunks, embeds)
-- Per-repository chat sessions with streaming responses (SSE) and file citations
-- Markdown answers with code blocks, chat history, workspace overview and settings pages
-
-## Tech Stack
-
-- **Backend:** Java 21, Spring Boot 4.1, Spring Security + OAuth2 Client, Spring Data JPA, Spring AI 2.0 (OpenAI + pgvector)
-- **Database:** PostgreSQL 16 with pgvector (`docker-compose.yml`)
-- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4, TanStack Query, Streamdown
-- **AI / RAG:** OpenAI embeddings + chat model, pgvector similarity search (top 8 chunks), custom prompt builder with citations
-
-## Project Structure
-
-```
-devPilot/
-  backend/   # Spring Boot API (port 8080)
-    src/main/java/devPilot/backend/
-      controllers/  # Auth, Repo, Chat REST endpoints
-      services/     # Chat, Repo, User logic
-      services/ai/        # Prompt builder, retriever, stream handler
-      services/indexing/  # File filter, chunker, indexing service
-      services/github/    # GitHub API client, rate limiter
-      entity/ repository/ dto/ security/ config/
-  client/    # Next.js app (port 3000)
-    app/            # /, /login, /auth/callback, /dashboard, /chat/[repoId]
-    components/     # chat, dashboard, layout, ui
-    hooks/ lib/     # use-auth, use-chat, use-repos, api client, SSE parser
-  docker/           # Postgres init (vector, hstore, uuid-ossp)
-  docker-compose.yml
-```
-
-## Prerequisites
-
-- Docker
-- Java 21
-- Node.js 20+
-- A GitHub OAuth App (Client ID + Secret)
-- An OpenAI API key
-
-## Quick Start
-
-### 1. Start the database
+You need Docker, Java 21 and Node 20+.
 
 ```bash
+# 1. Database (Postgres 16 + pgvector on port 5433)
 docker compose up -d postgres
-```
 
-Starts `pgvector/pgvector:pg16` on host port `5433`, database `devpilot`.
-
-### 2. Configure the backend
-
-Create `backend/src/main/resources/application.properties` (this file is gitignored):
-
-```properties
-server.port=8080
-
-spring.datasource.url=jdbc:postgresql://localhost:5433/devpilot
-spring.datasource.username=postgres
-spring.datasource.password=postgres
-spring.jpa.hibernate.ddl-auto=update
-
-app.frontend-url=http://localhost:3000
-app.cors.allowed-origins=http://localhost:3000
-
-# Server-side GitHub token used to fetch repository contents. No AI key here.
-app.github.token=ghp_your-github-token
-```
-
-> There is no server-side AI key. Visitors save their own OpenAI or Gemini key in
-> the browser (Settings → AI provider key) and the backend builds chat and
-> embedding models per request from the key sent in the `X-Api-Key` header.
-
-### 3. Run the backend
-
-```bash
+# 2. Backend on :8080
 cd backend
+export GEMINI_API_KEY=your-key        # free at https://aistudio.google.com/apikey
+export GITHUB_TOKEN=optional-token    # no scopes needed; lifts GitHub's 60 calls/hour limit
 ./mvnw spring-boot:run
-```
 
-API runs on `http://localhost:8080`.
-
-### 4. Run the frontend
-
-```bash
-cd client
+# 3. Frontend on :3000
+cd ../client
 npm install
 echo "NEXT_PUBLIC_API_BASE_URL=http://localhost:8080" > .env.local
 npm run dev
 ```
 
-App runs on `http://localhost:3000`.
+Open http://localhost:3000, paste `https://github.com/spring-projects/spring-petclinic`, press Index, then Chat.
 
-### 5. Use it
+Never commit a key. Everything secret comes from environment variables.
 
-1. Open `http://localhost:3000` and continue with GitHub.
-2. On the dashboard, sync repos and click Index on one.
-3. Wait until status is `READY`, then open Chat.
+## Free tier and limits
 
-## API Overview
+DevPilot defaults to Google's Gemini API free tier: `gemini-3.5-flash-lite` for answers and `gemini-embedding-2` for embeddings. Google's pricing page lists both as "Free of charge" on the free tier (checked October 10, 2026). Google's own limits, from its [rate limits page](https://ai.google.dev/gemini-api/docs/rate-limits): limits are per Google Cloud project, not per key, and "Requests per day (RPD) quotas reset at midnight Pacific time". Your project's exact numbers are shown in AI Studio.
 
-| Method | Endpoint | Description |
-| ------ | -------- | ----------- |
-| GET | `/api/auth/login-url` | Get GitHub OAuth URL |
-| GET | `/api/auth/me` | Current user |
-| POST | `/api/auth/logout` | Logout |
-| GET | `/api/repos?refresh=true` | List / sync GitHub repos |
-| GET | `/api/repos/{id}` | Repo details |
-| POST | `/api/repos/{id}/index` | Start indexing (202) |
-| GET | `/api/repos/{id}/status` | Indexing status |
-| POST | `/api/chat/sessions` | Create chat session (repo must be READY) |
-| GET | `/api/chat/sessions?repositoryId=` | List sessions |
-| GET | `/api/chat/sessions/{id}` | Message history |
-| POST | `/api/chat/sessions/{id}/messages` | Send message (SSE stream) |
+What I measured with a free-tier key: Google's 429 reply names the embedding limit as `embed_content_free_tier_requests, limit: 100` per minute, and every text in a batch counts as one request. So a repo with more than about 100 chunks hits the limit mid-index. DevPilot waits the time Google asks for ("Please retry in 32s"), shows "Waiting for the free per-minute limit" in the progress bar, and carries on.
 
-## How Indexing and Chat Work
+To keep one free key alive on a public site, the server enforces (all configurable, `0` switches a limit off):
 
-- **Indexing:** fetches the GitHub repo tree, skips binaries / lockfiles / `node_modules` / build output, chunks code files (~800 chars), and stores embeddings in pgvector with `repoId`, `filePath`, `language` metadata.
-- **Chat:** retrieves the top 8 similar chunks for the repo, builds a context-only prompt, streams the answer over SSE (`token`, `user_message`, `assistant_message`, `done` events), and saves citations as JSON.
+| Limit | Default | Env var |
+|---|---|---|
+| Questions per visitor per day | 30 | `LIMIT_QUESTIONS_PER_VISITOR` |
+| Index runs per visitor per day | 5 | `LIMIT_INDEXES_PER_VISITOR` |
+| Questions per day, whole site | 1000 | `LIMIT_QUESTIONS_GLOBAL` |
+| Index runs per day, whole site | 100 | `LIMIT_INDEXES_GLOBAL` |
+| Largest repo accepted | 60 MB | `MAX_REPO_MB` |
+| Most code files per index | 800 | `MAX_INDEX_FILES` |
 
-## Scripts
+Counters live in Postgres, so a restart does not reset them, and the day rolls over at midnight Pacific, the same moment Google resets its daily quota. A visitor who runs out sees "You've used today's 30 free questions. Come back tomorrow." The visitor id is kept in the browser, so clearing site data resets a visitor's own count; the site-wide cap is the hard stop. If Gemini itself answers 429, chat retries twice with a back-off before saying "The free Gemini quota is busy right now. Wait a minute and try again."
 
-Backend (`backend/`):
+### Google's free-tier data terms
 
-```bash
-./mvnw test       # run tests
-./mvnw package    # build jar
+Read these before you put a free key on a public site. From Google's [Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms), under Unpaid Services:
+
+> When you use Unpaid Services, including, for example, Google AI Studio and the unpaid quota on Gemini API, Google uses the content you submit to the Services and any generated responses to provide, improve, and develop Google products and services and machine learning technologies, including Google's enterprise features, products, and services, consistent with our Privacy Policy.
+
+> To help with quality and improve our products, human reviewers may read, annotate, and process your API input and output.
+
+> Do not submit sensitive, confidential, or personal information to the Unpaid Services.
+
+DevPilot only indexes public repositories, and private repos are refused even if the server's GitHub token could read them. Questions visitors type are sent to Google too, so the site should say so (the frontend shows which model answers).
+
+### Other providers
+
+The same code runs on OpenAI (`AI_PROVIDER=openai`, `OPENAI_API_KEY`) or on a local Ollama (`AI_PROVIDER=ollama`). Each provider keeps its own vector table because embedding sizes differ.
+
+## Deploy for free
+
+- [docs/DEPLOY-FREE.md](docs/DEPLOY-FREE.md): Neon (database) + Render (backend) + Vercel (frontend), no card.
+- [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md): one Oracle Ampere VM running `docker-compose.prod.yml`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  B[Browser<br/>Next.js] -- REST + SSE<br/>X-Visitor-Id --> API[Spring Boot API]
+  API -- one zip per commit,<br/>compare for changes --> GH[GitHub API]
+  API -- embeddings + chat<br/>server key --> AI[Gemini / OpenAI / Ollama]
+  API -- chunks + vectors,<br/>repos, chats, usage --> PG[(Postgres + pgvector)]
 ```
 
-Frontend (`client/`):
+- `services/indexing`: zip download, file filter, class/method chunker, incremental re-index.
+- `services/ai`: provider factory, Gemini chat and embeddings, retries on 429, retriever, prompt, SSE stream.
+- `services/limits`: the daily usage limiter.
+- `services/github`: GitHub client with a rate limiter; refuses private repos.
+
+## API
+
+| Method | Endpoint | What it does |
+|---|---|---|
+| GET | `/api/usage` | Model in use and today's remaining free questions and index runs |
+| GET | `/api/repos` | This visitor's repos |
+| POST | `/api/repos/by-url` | Add a public repo `{owner, name}` |
+| POST | `/api/repos/{id}/index` | Start (or re-run) indexing, 202 |
+| GET | `/api/repos/{id}/status` | Live progress |
+| DELETE | `/api/repos/{id}` | Remove from this visitor's list |
+| POST | `/api/chat/sessions` | New chat for a ready repo |
+| GET | `/api/chat/sessions/{id}` | Chat history |
+| POST | `/api/chat/sessions/{id}/messages` | Ask; answer streams as SSE (`token`, `assistant_message`, `done`, `error`) |
+
+Every call carries `X-Visitor-Id`, the anonymous browser id. It is not a login.
+
+## Tests
 
 ```bash
-npm run dev     # dev server
-npm run build   # production build
-npm run start   # serve production build
-npm run lint    # eslint
+cd backend && ./mvnw verify     # unit tests + Testcontainers end-to-end test (needs Docker)
+cd client && npm run lint && npm run build
 ```
+
+GitHub Actions runs both on every push.
+
+## Credits
+
+- Headline animation: [ObsidianUI FlipText](https://www.obsidianui.dev/docs/flip-text) (MIT).
+- Built with Spring Boot, Spring AI, pgvector, Next.js, Tailwind CSS and TanStack Query.

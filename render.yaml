@@ -1,5 +1,5 @@
 # Render blueprint for DevPilot backend (free tier, no card required).
-# No-login architecture: server GitHub token + visitor AI key via header.
+# No login, no key pasting: the server holds one GitHub token and one AI key.
 # Frontend goes on Vercel, database on Neon — see docs/DEPLOY-FREE.md.
 services:
   - type: web
@@ -28,7 +28,22 @@ services:
       - key: SPRING_JPA_HIBERNATE_DDL_AUTO
         value: update
       # Server-side GitHub token for fetching repo data (no user accounts).
-      # Create one free at github.com/settings/tokens (classic, repo scope).
+      # Create one free at github.com/settings/tokens (classic, no scopes needed for public repos).
       - key: APP_GITHUB_TOKEN
-        value: paste-your-github-token-here
+        sync: false
+      # One free Gemini key for the whole site: https://aistudio.google.com/apikey
+      - key: GEMINI_API_KEY
+        sync: false
+      # Daily free limits (0 = off). See README "Free tier and limits".
+      - key: LIMIT_QUESTIONS_PER_VISITOR
+        value: 30
+      - key: LIMIT_INDEXES_PER_VISITOR
+        value: 5
+      - key: LIMIT_QUESTIONS_GLOBAL
+        value: 1000
+      - key: LIMIT_INDEXES_GLOBAL
+        value: 100
+      - key: APP_FRONTEND_URL
+        sync: false
+      - key: APP_CORS_ALLOWED_ORIGINS
         sync: false
