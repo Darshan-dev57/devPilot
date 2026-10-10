@@ -123,9 +123,9 @@ To keep one free key alive on a public site, the server enforces (all configurab
 | Limit | Default | Env var |
 |---|---|---|
 | Questions per visitor per day | 30 | `LIMIT_QUESTIONS_PER_VISITOR` |
-| Index runs per visitor per day | 5 | `LIMIT_INDEXES_PER_VISITOR` |
+| Index runs per visitor per day | 2 | `LIMIT_INDEXES_PER_VISITOR` |
 | Questions per day, whole site | 1000 | `LIMIT_QUESTIONS_GLOBAL` |
-| Index runs per day, whole site | 100 | `LIMIT_INDEXES_GLOBAL` |
+| Index runs per day, whole site | 5 | `LIMIT_INDEXES_GLOBAL` |
 | Largest repo accepted | 60 MB | `MAX_REPO_MB` |
 | Most code files per index | 800 | `MAX_INDEX_FILES` |
 
