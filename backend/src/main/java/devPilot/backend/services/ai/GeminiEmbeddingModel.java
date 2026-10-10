@@ -20,15 +20,16 @@ import org.springframework.web.client.RestClient;
  */
 public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
 
-    private static final String EMBED_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/%s:batchEmbedContents";
+    private static final String EMBED_PATH = "/v1beta/models/%s:batchEmbedContents";
 
     private final String apiKey;
+    private final String baseUrl;
     private final String model;
     private final RestClient restClient;
 
-    public GeminiEmbeddingModel(String apiKey, String model, int dimensions, RestClient restClient) {
+    public GeminiEmbeddingModel(String apiKey, String baseUrl, String model, int dimensions, RestClient restClient) {
         this.apiKey = apiKey;
+        this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.model = model;
         this.restClient = restClient;
         this.embeddingDimensions.set(dimensions);
@@ -46,7 +47,7 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
         }
 
         Map<String, Object> response = restClient.post()
-                .uri(EMBED_URL.formatted(model))
+                .uri(baseUrl + EMBED_PATH.formatted(model))
                 .header("x-goog-api-key", apiKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("requests", requests))
