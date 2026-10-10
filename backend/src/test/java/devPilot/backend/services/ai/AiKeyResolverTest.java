@@ -38,7 +38,7 @@ class AiKeyResolverTest {
     @Test
     void aVisitorsGeminiKeyIsUsedForEmbeddingsAndAnswers() {
         var resolver = new AiKeyResolver("server-key", "", "");
-        var keys = new VisitorKeys(" visitor-gemini ", null, null);
+        var keys = VisitorKeys.geminiOnly(" visitor-gemini ");
         assertThat(resolver.embeddingKey(keys)).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.GEMINI, "visitor-gemini", true, null));
         assertThat(resolver.chatKey(keys).apiKey()).isEqualTo("visitor-gemini");
         assertThat(resolver.chatKey(VisitorKeys.NONE)).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.GEMINI, "server-key"));
@@ -47,7 +47,7 @@ class AiKeyResolverTest {
     @Test
     void aVisitorsOpenCodeKeyAnswersWhileTheServerEmbeds() {
         var resolver = new AiKeyResolver("server-key", "", "");
-        var keys = new VisitorKeys(null, "zen-key", "qwen3.8-max");
+        var keys = new VisitorKeys(null, "opencode", "zen-key", "qwen3.8-max");
         var chat = resolver.chatKey(keys);
         assertThat(chat.provider()).isEqualTo(AiProvider.OPENCODE);
         assertThat(chat.visitor()).isTrue();
@@ -58,14 +58,31 @@ class AiKeyResolverTest {
     @Test
     void keysNeverShowUpInToString() {
         var resolver = new AiKeyResolver("server-secret", "", "");
-        assertThat(resolver.chatKey(new VisitorKeys("visitor-secret", "zen-secret", null)).toString()).doesNotContain("secret");
+        assertThat(resolver.chatKey(new VisitorKeys("visitor-secret", "claude", "claude-secret", null)).toString()).doesNotContain("secret");
         assertThat(resolver.requireKey().toString()).doesNotContain("secret");
-        assertThat(new VisitorKeys("visitor-secret", "zen-secret", "m").toString()).doesNotContain("secret");
+        assertThat(new VisitorKeys("visitor-secret", "openai", "sk-secret", "m").toString()).doesNotContain("secret");
     }
 
     @Test
     void openCodeCannotBeTheServersProvider() {
         assertThatThrownBy(() -> new AiKeyResolver("k", "", "opencode"))
                 .hasMessageContaining("visitor's own key");
+    }
+
+    @Test
+    void claudeOrOpenAiAnswerWhileEmbeddingsStayOnGemini() {
+        var resolver = new AiKeyResolver("server-key", "", "");
+        var claude = new VisitorKeys("visitor-gemini", "claude", "sk-ant-x", "");
+        assertThat(resolver.chatKey(claude)).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.ANTHROPIC, "sk-ant-x", true, null));
+        assertThat(resolver.embeddingKey(claude).apiKey()).isEqualTo("visitor-gemini");
+        var openai = new VisitorKeys(null, "openai", "sk-x", "gpt-6-luna");
+        assertThat(resolver.chatKey(openai).provider()).isEqualTo(AiProvider.OPENAI);
+        assertThat(resolver.embeddingKey(openai)).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.GEMINI, "server-key"));
+    }
+
+    @Test
+    void aChatProviderWithoutItsKeyFallsBackToTheFreeServerKey() {
+        var resolver = new AiKeyResolver("server-key", "", "");
+        assertThat(resolver.chatKey(new VisitorKeys(null, "claude", "", null)).visitor()).isFalse();
     }
 }

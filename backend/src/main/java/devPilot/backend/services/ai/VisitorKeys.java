@@ -1,33 +1,48 @@
 package devPilot.backend.services.ai;
 
 /**
- * Keys a visitor chose to use instead of the server's free allowance. They arrive in the
- * X-Gemini-Key and X-OpenCode-Key headers (plus an optional X-OpenCode-Model) on each request, live only for that request
- * (or that index job) and are never stored or logged.
+ * Keys a visitor chose to use instead of the server's free allowance, sent per request:
+ * <ul>
+ *   <li>X-Gemini-Key: their Gemini key, for indexing (embeddings) and, by default, answers.</li>
+ *   <li>X-Chat-Provider, X-Chat-Key, X-Chat-Model: another provider for answers
+ *       (openai, claude or opencode), its key and model.</li>
+ * </ul>
+ * They live only for that request (or that index job) and are never stored or logged.
  */
-public record VisitorKeys(String gemini, String opencode, String opencodeModel) {
+public record VisitorKeys(String gemini, String chatProvider, String chatKey, String chatModel) {
 
     public static final String GEMINI_HEADER = "X-Gemini-Key";
-    public static final String OPENCODE_HEADER = "X-OpenCode-Key";
-    public static final String OPENCODE_MODEL_HEADER = "X-OpenCode-Model";
-    public static final VisitorKeys NONE = new VisitorKeys(null, null, null);
+    public static final String CHAT_PROVIDER_HEADER = "X-Chat-Provider";
+    public static final String CHAT_KEY_HEADER = "X-Chat-Key";
+    public static final String CHAT_MODEL_HEADER = "X-Chat-Model";
+    public static final VisitorKeys NONE = new VisitorKeys(null, null, null, null);
 
     public VisitorKeys {
         gemini = clean(gemini);
-        opencode = clean(opencode);
-        opencodeModel = clean(opencodeModel);
+        chatProvider = clean(chatProvider).toLowerCase();
+        chatKey = clean(chatKey);
+        chatModel = clean(chatModel);
+    }
+
+    public static VisitorKeys geminiOnly(String gemini) {
+        return new VisitorKeys(gemini, null, null, null);
     }
 
     public boolean hasGemini() {
         return !gemini.isEmpty();
     }
 
-    public boolean hasOpencode() {
-        return !opencode.isEmpty();
+    /** True when answers should come from the visitor's own non-Gemini key. */
+    public boolean hasChatKey() {
+        return !chatKey.isEmpty() && !chatProvider.isEmpty() && !"gemini".equals(chatProvider);
+    }
+
+    public AiProvider chatProviderEnum() {
+        return AiProvider.parse(chatProvider);
     }
 
     public boolean any() {
-        return hasGemini() || hasOpencode();
+        return hasGemini() || hasChatKey();
     }
 
     private static String clean(String value) {
@@ -36,6 +51,6 @@ public record VisitorKeys(String gemini, String opencode, String opencodeModel) 
 
     @Override
     public String toString() {
-        return "VisitorKeys[gemini=" + (hasGemini() ? "set" : "none") + ", opencode=" + (hasOpencode() ? "set" : "none") + "]";
+        return "VisitorKeys[gemini=" + (hasGemini() ? "set" : "none") + ", chat=" + (hasChatKey() ? chatProvider : "none") + "]";
     }
 }

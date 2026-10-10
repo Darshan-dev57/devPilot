@@ -56,9 +56,10 @@ public class ChatController {
             @Valid @RequestBody ChatMessageRequest request,
             @RequestHeader(Visitors.HEADER) String visitor,
             @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey,
-            @RequestHeader(name = VisitorKeys.OPENCODE_HEADER, required = false) String opencodeKey,
-            @RequestHeader(name = VisitorKeys.OPENCODE_MODEL_HEADER, required = false) String opencodeModel) {
+            @RequestHeader(name = VisitorKeys.CHAT_PROVIDER_HEADER, required = false) String chatProvider,
+            @RequestHeader(name = VisitorKeys.CHAT_KEY_HEADER, required = false) String chatKey,
+            @RequestHeader(name = VisitorKeys.CHAT_MODEL_HEADER, required = false) String chatModel) {
         return chatService.streamReply(id, Visitors.parse(visitor), request.content(),
-                new VisitorKeys(geminiKey, opencodeKey, opencodeModel));
+                new VisitorKeys(geminiKey, chatProvider, chatKey, chatModel));
     }
 }

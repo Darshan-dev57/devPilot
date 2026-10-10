@@ -27,19 +27,26 @@ public class UsageController {
     public UsageResponse usage(
             @RequestHeader(Visitors.HEADER) String visitor,
             @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey,
-            @RequestHeader(name = VisitorKeys.OPENCODE_HEADER, required = false) String opencodeKey,
-            @RequestHeader(name = VisitorKeys.OPENCODE_MODEL_HEADER, required = false) String opencodeModel) {
+            @RequestHeader(name = VisitorKeys.CHAT_PROVIDER_HEADER, required = false) String chatProvider,
+            @RequestHeader(name = VisitorKeys.CHAT_KEY_HEADER, required = false) String chatKey,
+            @RequestHeader(name = VisitorKeys.CHAT_MODEL_HEADER, required = false) String chatModel) {
         UsageLimiter.Usage usage = usageLimiter.usage(Visitors.parse(visitor));
-        VisitorKeys keys = new VisitorKeys(geminiKey, opencodeKey, opencodeModel);
-        AiProvider chat = keys.hasOpencode() ? AiProvider.OPENCODE : keys.hasGemini() ? AiProvider.GEMINI : aiKeyResolver.chatProvider();
-        String model = keys.hasOpencode() && !keys.opencodeModel().isEmpty() ? keys.opencodeModel() : aiModelFactory.chatModelName(chat);
+        VisitorKeys keys = new VisitorKeys(geminiKey, chatProvider, chatKey, chatModel);
+        boolean ownChat = keys.hasChatKey() || keys.hasGemini();
+        var answering = ownChat ? aiKeyResolver.chatKey(keys) : null;
+        AiProvider chat = answering != null ? answering.provider() : aiKeyResolver.chatProvider();
+        String model = answering != null && answering.model() != null ? answering.model()
+                : answering != null ? aiModelFactory.visitorDefaultModel(chat) : aiModelFactory.chatModelName(chat);
         return new UsageResponse(chat.label(), model, aiKeyResolver.configured(),
                 usage.questionsLeft(), usage.questionsPerDay(), usage.indexesLeft(), usage.indexesPerDay(),
-                keys.hasGemini(), keys.hasOpencode());
+                keys.hasGemini(), ownChat);
     }
 
-    /** ownGeminiKey / ownOpencodeKey: the visitor's own key is in use, so the limits do not apply to it. */
+    /**
+     * ownGeminiKey: indexing runs on the visitor's Gemini key (no index limit).
+     * ownChatKey: answers run on the visitor's own key (no question limit).
+     */
     public record UsageResponse(String provider, String model, boolean configured, int questionsLeft,
-            int questionsPerDay, int indexesLeft, int indexesPerDay, boolean ownGeminiKey, boolean ownOpencodeKey) {
+            int questionsPerDay, int indexesLeft, int indexesPerDay, boolean ownGeminiKey, boolean ownChatKey) {
     }
 }

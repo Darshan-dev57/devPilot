@@ -11,9 +11,10 @@ import devPilot.backend.exceptions.ServiceUnavailableException;
  *
  * <p>By default everything runs on the server owner's one Gemini key (GEMINI_API_KEY,
  * free tier), inside the daily free limits. OPENAI_API_KEY works as the server key too.
- * A visitor who wants more can send their own Gemini key and/or their own OpenCode Zen
- * key; those requests run on the visitor's key and skip the daily limit. OpenCode Zen is
- * a visitor-key option only: its free models refuse calls from outside the OpenCode app.
+ * A visitor who wants more can send their own Gemini key (indexing and answers) and/or a
+ * key for answers from OpenAI, Claude or OpenCode Zen; those requests skip the daily
+ * limit. Embeddings always stay on the server's embedding provider (Gemini), so a repo
+ * indexed once stays searchable for everyone.
  */
 @Component
 public class AiKeyResolver {
@@ -42,7 +43,7 @@ public class AiKeyResolver {
         this.embeddingPreferred = clean(embeddingPreferred);
         if (!this.preferred.isEmpty() && !AiProvider.parse(this.preferred).embeds()) {
             throw new IllegalStateException("AI_PROVIDER=" + this.preferred
-                    + " is not supported on the server. OpenCode Zen works only as a visitor's own key.");
+                    + " is not supported on the server. Claude and OpenCode Zen work only as a visitor's own key.");
         }
     }
 
@@ -69,14 +70,18 @@ public class AiKeyResolver {
         return requireKey();
     }
 
-    /** Chat key for this request: the visitor's OpenCode key, else their Gemini key, else the server's. */
+    /**
+     * Chat key for this request: the visitor's chosen provider and key (OpenAI, Claude or
+     * OpenCode Zen), else their Gemini key, else the server's.
+     */
     public UserAiKey chatKey(VisitorKeys visitor) {
-        if (visitor.hasOpencode()) {
-            return new UserAiKey(AiProvider.OPENCODE, visitor.opencode(), true,
-                    visitor.opencodeModel().isEmpty() ? null : visitor.opencodeModel());
+        String model = visitor.chatModel().isEmpty() ? null : visitor.chatModel();
+        if (visitor.hasChatKey()) {
+            return new UserAiKey(visitor.chatProviderEnum(), visitor.chatKey(), true, model);
         }
         if (visitor.hasGemini()) {
-            return UserAiKey.visitor(AiProvider.GEMINI, visitor.gemini());
+            boolean geminiChosen = "gemini".equals(visitor.chatProvider());
+            return new UserAiKey(AiProvider.GEMINI, visitor.gemini(), true, geminiChosen ? model : null);
         }
         return requireChatKey();
     }

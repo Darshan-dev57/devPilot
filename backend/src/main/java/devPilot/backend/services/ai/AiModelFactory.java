@@ -31,8 +31,8 @@ import devPilot.backend.exceptions.ServiceUnavailableException;
  * <ul>
  *   <li>Gemini (default): Google's native REST API with the server's GEMINI_API_KEY.</li>
  *   <li>OpenAI: Spring AI's OpenAI client with OPENAI_API_KEY.</li>
- *   <li>OpenCode Zen: chat only, through its OpenAI-compatible endpoint, with a visitor's
- *       own key.</li>
+ *   <li>For a visitor's own key, answers can also come from Claude (Anthropic Messages
+ *       API) or OpenCode Zen (OpenAI-compatible endpoint). Both are chat only.</li>
  * </ul>
  * Models for the server's key are cached. Models for a visitor's key are built for one
  * request and dropped, so a visitor's key is never kept or reused.
@@ -69,6 +69,14 @@ public class AiModelFactory {
     @Value("${app.ai.opencode.chat-model:deepseek-v4.1-flash}")
     private String opencodeChatModel;
 
+    @Value("${app.ai.anthropic.base-url:https://api.anthropic.com}")
+    private String anthropicBaseUrl;
+    @Value("${app.ai.anthropic.chat-model:claude-sonnet-5-5}")
+    private String anthropicChatModel;
+    /** Default model when a visitor answers with their own OpenAI key. */
+    @Value("${app.ai.openai.visitor-chat-model:gpt-6-luna}")
+    private String openaiVisitorChatModel;
+
     @Value("${app.ai.retry-base-delay-ms:2000}")
     private long retryBaseDelayMs;
 
@@ -91,10 +99,31 @@ public class AiModelFactory {
         if (!key.visitor()) {
             return chatModel(key.provider(), key.apiKey());
         }
-        if (key.provider() == AiProvider.OPENCODE && key.model() != null) {
-            return openAiChat(opencodeBaseUrl, key.apiKey(), key.model());
+        if (key.model() == null && key.provider() == AiProvider.GEMINI) {
+            return buildChatModel(key.provider(), key.apiKey());
         }
-        return buildChatModel(key.provider(), key.apiKey());
+        String model = key.model() != null ? key.model() : visitorDefaultModel(key.provider());
+        return visitorChatModel(key.provider(), key.apiKey(), model);
+    }
+
+    /** The model a visitor's own key answers with when they did not pick one. */
+    public String visitorDefaultModel(AiProvider provider) {
+        return switch (provider) {
+            case GEMINI -> geminiChatModel;
+            case OPENAI -> openaiVisitorChatModel;
+            case OPENCODE -> opencodeChatModel;
+            case ANTHROPIC -> anthropicChatModel;
+        };
+    }
+
+    /** Protected so tests can swap in a fake. */
+    protected ChatModel visitorChatModel(AiProvider provider, String apiKey, String model) {
+        return switch (provider) {
+            case GEMINI -> new GeminiChatModel(geminiBaseUrl, model, apiKey, geminiKeyHeader);
+            case OPENAI -> openAiChat(openaiBaseUrl, apiKey, model);
+            case OPENCODE -> openAiChat(opencodeBaseUrl, apiKey, model);
+            case ANTHROPIC -> new ClaudeChatModel(anthropicBaseUrl, model, apiKey, 2048);
+        };
     }
 
     public VectorStore vectorStore(AiProvider provider, String apiKey) {
@@ -127,6 +156,7 @@ public class AiModelFactory {
             case GEMINI -> geminiChatModel;
             case OPENAI -> openaiChatModel;
             case OPENCODE -> opencodeChatModel;
+            case ANTHROPIC -> anthropicChatModel;
         };
     }
 
@@ -138,7 +168,7 @@ public class AiModelFactory {
         return switch (provider) {
             case GEMINI -> geminiEmbeddingDimensions;
             case OPENAI -> openaiEmbeddingDimensions;
-            case OPENCODE -> throw new IllegalStateException("OpenCode Zen has no embeddings");
+            case OPENCODE, ANTHROPIC -> throw new IllegalStateException(provider.label() + " has no embeddings");
         };
     }
 
@@ -148,7 +178,7 @@ public class AiModelFactory {
             case GEMINI -> new GeminiEmbeddingModel(apiKey, geminiBaseUrl, geminiKeyHeader, geminiEmbeddingModel,
                     geminiEmbeddingDimensions, restClientBuilder.clone().build());
             case OPENAI -> openAiEmbedding(openaiBaseUrl, apiKey, openaiEmbeddingModel, openaiEmbeddingDimensions);
-            case OPENCODE -> throw new IllegalStateException("OpenCode Zen has no embeddings");
+            case OPENCODE, ANTHROPIC -> throw new IllegalStateException(provider.label() + " has no embeddings");
         };
         return new RetryingEmbeddingModel(model, retryBaseDelayMs, 8);
     }
@@ -159,6 +189,7 @@ public class AiModelFactory {
             case GEMINI -> new GeminiChatModel(geminiBaseUrl, geminiChatModel, apiKey, geminiKeyHeader);
             case OPENAI -> openAiChat(openaiBaseUrl, apiKey, openaiChatModel);
             case OPENCODE -> openAiChat(opencodeBaseUrl, apiKey, opencodeChatModel);
+            case ANTHROPIC -> new ClaudeChatModel(anthropicBaseUrl, anthropicChatModel, apiKey, 2048);
         };
     }
 

@@ -79,7 +79,7 @@ public class RepoController {
         if (current.getIndexStatus() == IndexStatus.INDEXING) {
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(current));
         }
-        UserAiKey key = aiKeyResolver.embeddingKey(new VisitorKeys(geminiKey, null, null));
+        UserAiKey key = aiKeyResolver.embeddingKey(VisitorKeys.geminiOnly(geminiKey));
         boolean free = !key.visitor();
         if (free) {
             usageLimiter.consume(visitorId, UsageLimiter.Kind.INDEX);
@@ -111,7 +111,7 @@ public class RepoController {
             @RequestHeader(Visitors.HEADER) String visitor,
             @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey) {
         repoService.requireVisible(id, Visitors.parse(visitor));
-        UserAiKey key = aiKeyResolver.embeddingKey(new VisitorKeys(geminiKey, null, null));
+        UserAiKey key = aiKeyResolver.embeddingKey(VisitorKeys.geminiOnly(geminiKey));
         Repository repo = indexingService.resumeIndexing(id, key);
         indexingService.resumeAsync(id, key);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
