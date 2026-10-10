@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import devPilot.backend.services.Visitors;
@@ -73,6 +74,11 @@ public class GlobalExceptionHandler {
             return error(HttpStatus.BAD_REQUEST, "Missing visitor id. Reload the page and try again.");
         }
         return error(HttpStatus.BAD_REQUEST, "Missing header " + ex.getHeaderName());
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    ResponseEntity<Map<String, Object>> handleMissingParameter(MissingServletRequestParameterException ex) {
+        return error(HttpStatus.BAD_REQUEST, "Missing parameter " + ex.getParameterName());
     }
 
     @ExceptionHandler({ HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class })
