@@ -7,8 +7,9 @@ public final class RagSettings {
     /** Max time (ms) to keep an SSE stream open while the model is responding. */
     public static final long STREAM_TIMEOUT_MS = 180_000L;
 
-    /** Metadata key stored on each embedded document (must match {@link devPilot.backend.service.indexing.CodeChunker}). */
+    /** Metadata keys stored on each embedded chunk (written by CodeChunker). */
     public static final String METADATA_REPO_ID = "repoId";
+    public static final String METADATA_FILE_PATH = "filePath";
 
     private RagSettings() {
     }
