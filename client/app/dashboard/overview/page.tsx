@@ -1,15 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { AppShell } from "@/components/layout/app-shell";
-import { OverviewDashboard } from "@/components/dashboard/overview-dashboard";
-
+/** The old overview page duplicated the repo list; send visitors to the list itself. */
 export default function OverviewPage() {
-  return (
-    <AppShell
-      title="Overview"
-      description="Workspace stats and recent repository activity"
-    >
-      <OverviewDashboard />
-    </AppShell>
-  );
+  redirect("/dashboard");
 }

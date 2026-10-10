@@ -19,6 +19,11 @@ export type Repository = {
   filesTotal: number;
   filesProcessed: number;
   errorMessage: string | null;
+  indexedSha: string | null;
+  embeddingProvider: "OPENAI" | "GEMINI" | null;
+  lastIndexMode: "FULL" | "INCREMENTAL" | "UP_TO_DATE" | null;
+  lastIndexDurationMs: number | null;
+  indexPhase: string | null;
 };
 
 export type IndexStatusResponse = {
@@ -29,6 +34,10 @@ export type IndexStatusResponse = {
   chunkCount: number;
   indexedAt: string | null;
   errorMessage: string | null;
+  indexPhase: string | null;
+  indexedSha: string | null;
+  lastIndexMode: Repository["lastIndexMode"];
+  lastIndexDurationMs: number | null;
 };
 
 export type ChatSession = {

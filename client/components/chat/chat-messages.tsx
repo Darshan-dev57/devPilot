@@ -1,23 +1,17 @@
 "use client";
 
-import { Bot, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { CitationChips } from "@/components/chat/citation-chips";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import {
-  Message,
-  MessageAvatar,
-  MessageContent,
-  MessageFooter,
-  MessageGroup,
-} from "@/components/ui/message";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ChatMessage, Repository } from "@/lib/api";
-import { cn } from "@/lib/utils";
+
+const SUGGESTIONS = [
+  "Give me a two-minute tour of this codebase",
+  "Where does a request enter, and what happens next?",
+  "How is the project built, tested and deployed?",
+];
 
 export function ChatMessages({
   repo,
@@ -25,163 +19,117 @@ export function ChatMessages({
   streamText,
   isLoading,
   streaming,
+  onSuggestion,
 }: {
   repo: Repository;
   messages: ChatMessage[];
   streamText?: string;
   isLoading?: boolean;
   streaming?: boolean;
+  onSuggestion?: (text: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamText]);
+    bottomRef.current?.scrollIntoView({ behavior: streaming ? "auto" : "smooth", block: "end" });
+  }, [messages, streamText, streaming]);
 
   if (isLoading) {
     return (
-      <div className="flex flex-1 flex-col gap-4 p-6">
-        <Skeleton className="h-16 w-2/3 rounded-3xl" />
-        <Skeleton className="ml-auto h-12 w-1/2 rounded-3xl" />
-        <Skeleton className="h-24 w-3/4 rounded-3xl" />
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-8">
+        <Skeleton className="ml-auto h-10 w-1/2 rounded-2xl" />
+        <Skeleton className="h-28 w-3/4 rounded-2xl" />
       </div>
     );
   }
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
-        {messages.length === 0 && !streamText && (
-          <div className="rounded-2xl border border-dashed bg-muted/30 px-6 py-10 text-center">
-            <p className="font-medium">Ask anything about this codebase</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Try “Where is authentication handled?” or “Explain the repository
-              indexing flow.”
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-6 sm:py-10">
+        {messages.length === 0 && !streamText && !streaming && (
+          <div className="py-6 sm:py-12">
+            <p className="font-[family-name:var(--font-display)] text-3xl leading-tight sm:text-4xl">
+              What do you want to know about <span className="italic text-primary">{repo.name}</span>?
             </p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Answers come only from the indexed code, with links to the lines they used.
+            </p>
+            <div className="mt-6 grid gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => onSuggestion?.(s)}
+                  className="rounded-lg border bg-card px-3.5 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        <MessageGroup>
-          {messages.map((message) => {
-            const isUser = message.role === "USER";
-            return (
-              <Message key={message.id} align={isUser ? "end" : "start"}>
-                <MessageAvatar>
-                  <Avatar className="size-8">
-                    <AvatarFallback
-                      className={cn(
-                        isUser
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                      )}
-                    >
-                      {isUser ? (
-                        <UserRound className="size-4" />
-                      ) : (
-                        <Bot className="size-4" />
-                      )}
-                    </AvatarFallback>
-                  </Avatar>
-                </MessageAvatar>
-                <MessageContent>
-                  <Bubble
-                    variant={isUser ? "default" : "muted"}
-                    align={isUser ? "end" : "start"}
-                    className={cn(!isUser && "max-w-full")}
-                  >
-                    <BubbleContent className={cn(!isUser && "w-full max-w-full px-4 py-3")}>
-                      {isUser ? (
-                        <span className="whitespace-pre-wrap">
-                          {message.content}
-                        </span>
-                      ) : (
-                        <ChatMarkdown content={message.content} />
-                      )}
-                    </BubbleContent>
-                  </Bubble>
-                  {!isUser && message.citations?.length > 0 && (
-                    <MessageFooter>
-                      <CitationChips repo={repo} citations={message.citations} />
-                    </MessageFooter>
-                  )}
-                </MessageContent>
-              </Message>
-            );
-          })}
+        {messages.map((message) =>
+          message.role === "USER" ? (
+            <UserBubble key={message.id} text={message.content} />
+          ) : (
+            <AssistantBlock key={message.id}>
+              <ChatMarkdown content={message.content} />
+              <CitationChips repo={repo} citations={message.citations ?? []} />
+            </AssistantBlock>
+          )
+        )}
 
-          {streaming && !streamText && <ThinkingBubble />}
-
-          {streamText && (
-            <Message align="start">
-              <MessageAvatar>
-                <Avatar className="size-8">
-                  <AvatarFallback className="bg-muted">
-                    <Bot className="size-4" />
-                  </AvatarFallback>
-                </Avatar>
-              </MessageAvatar>
-              <MessageContent>
-                <Bubble variant="muted" align="start" className="max-w-full">
-                  <BubbleContent className="w-full max-w-full px-4 py-3">
-                    <ChatMarkdown content={streamText} isStreaming />
-                    <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/50 align-middle" />
-                  </BubbleContent>
-                </Bubble>
-              </MessageContent>
-            </Message>
-          )}
-        </MessageGroup>
-        <div ref={bottomRef} />
+        {streaming && !streamText && <Thinking />}
+        {streamText && (
+          <AssistantBlock>
+            <ChatMarkdown content={streamText} isStreaming />
+          </AssistantBlock>
+        )}
+        <div ref={bottomRef} className="h-px" />
       </div>
-    </ScrollArea>
+    </div>
   );
 }
 
-const THINKING_STAGES = [
-  "Searching relevant code…",
-  "Reading matched files…",
-  "Writing the answer…",
-];
+function UserBubble({ text }: { text: string }) {
+  return (
+    <div className="flex justify-end">
+      <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-foreground px-4 py-2.5 text-sm text-background">
+        {text}
+      </p>
+    </div>
+  );
+}
 
-/** Animated waiting bubble shown after send, before the first token arrives. */
-function ThinkingBubble() {
+function AssistantBlock({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-primary font-mono text-[10px] font-semibold text-primary-foreground">
+        dp
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+const STAGES = ["Searching the code", "Reading the matches", "Writing"];
+
+function Thinking() {
   const [stage, setStage] = useState(0);
-
   useEffect(() => {
-    const timer = setInterval(
-      () => setStage((s) => (s + 1) % THINKING_STAGES.length),
-      4000
-    );
+    const timer = setInterval(() => setStage((s) => Math.min(s + 1, STAGES.length - 1)), 1500);
     return () => clearInterval(timer);
   }, []);
-
   return (
-    <Message align="start">
-      <MessageAvatar>
-        <Avatar className="size-8">
-          <AvatarFallback className="bg-muted">
-            <Bot className="size-4" />
-          </AvatarFallback>
-        </Avatar>
-      </MessageAvatar>
-      <MessageContent>
-        <Bubble variant="muted" align="start">
-          <BubbleContent className="px-4 py-3">
-            <span className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="flex gap-1" aria-hidden>
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="size-1.5 animate-bounce rounded-full bg-current"
-                    style={{ animationDelay: `${i * 150}ms` }}
-                  />
-                ))}
-              </span>
-              {THINKING_STAGES[stage]}
-            </span>
-          </BubbleContent>
-        </Bubble>
-      </MessageContent>
-    </Message>
+    <AssistantBlock>
+      <p className="flex items-center gap-2 pt-0.5 text-sm text-muted-foreground">
+        <span className="flex gap-1" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="size-1 animate-bounce rounded-full bg-current" style={{ animationDelay: `${i * 120}ms` }} />
+          ))}
+        </span>
+        {STAGES[stage]}…
+      </p>
+    </AssistantBlock>
   );
 }

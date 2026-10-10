@@ -65,11 +65,7 @@ export function useStartIndexing() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.repos.status(repo.id),
       });
-      toast.add({
-        title: "Indexing started",
-        description: `Indexing ${repo.fullName}…`,
-        type: "loading",
-      });
+
     },
     onError: (error: Error) => {
       toast.add({
@@ -119,11 +115,7 @@ export function useResumeIndexing() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.repos.status(repo.id),
       });
-      toast.add({
-        title: "Indexing resumed",
-        description: `Resuming ${repo.fullName}…`,
-        type: "loading",
-      });
+
     },
     onError: (error: Error) => {
       toast.add({

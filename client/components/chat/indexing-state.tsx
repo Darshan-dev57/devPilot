@@ -1,115 +1,75 @@
 "use client";
 
-import { AlertCircle, Loader2, Pause, Play, RotateCcw } from "lucide-react";
+import { AlertCircle, Pause, Play, RotateCcw, Sparkles } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Progress } from "@/components/ui/progress";
-import { getRepoProgress, usePauseIndexing, useResumeIndexing, useStartIndexing } from "@/hooks/use-repos";
+import { RepoProgress } from "@/components/dashboard/repo-progress";
+import { usePauseIndexing, useResumeIndexing, useStartIndexing } from "@/hooks/use-repos";
 import type { IndexStatusResponse, Repository } from "@/lib/api";
 
-export function IndexingState({
-  repo,
-  status,
-}: {
-  repo: Repository;
-  status?: IndexStatusResponse;
-}) {
+const button =
+  "inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-3.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50";
+
+export function IndexingState({ repo, status }: { repo: Repository; status?: IndexStatusResponse }) {
   const indexMutation = useStartIndexing();
   const pauseMutation = usePauseIndexing();
   const resumeMutation = useResumeIndexing();
-  const filesProcessed = status?.filesProcessed ?? repo.filesProcessed;
-  const filesTotal = status?.filesTotal ?? repo.filesTotal;
-  const chunkCount = status?.chunkCount ?? repo.chunkCount;
-  const progress = getRepoProgress({ filesProcessed, filesTotal });
+  const live = {
+    filesProcessed: status?.filesProcessed ?? repo.filesProcessed,
+    filesTotal: status?.filesTotal ?? repo.filesTotal,
+    indexPhase: status?.indexPhase ?? repo.indexPhase,
+  };
   const indexStatus = status?.indexStatus ?? repo.indexStatus;
   const errorMessage = status?.errorMessage ?? repo.errorMessage;
 
-  if (indexStatus === "FAILED") {
-    return (
-      <Empty className="h-full border-0">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <AlertCircle className="text-destructive" />
-          </EmptyMedia>
-          <EmptyTitle>Indexing failed</EmptyTitle>
-          <EmptyDescription>
-            {errorMessage || "Something went wrong while indexing this repository."}
-          </EmptyDescription>
-        </EmptyHeader>
-        <Button
-          onClick={() => indexMutation.mutate(repo.id)}
-          disabled={indexMutation.isPending}
-        >
-          <RotateCcw data-icon="inline-start" />
-          Retry indexing
-        </Button>
-      </Empty>
-    );
-  }
-
-  if (indexStatus === "PAUSED") {
-    return (
-      <Empty className="h-full border-0">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Pause />
-          </EmptyMedia>
-          <EmptyTitle>Indexing paused</EmptyTitle>
-          <EmptyDescription>
-            {filesTotal > 0
-              ? `Paused at ${filesProcessed} of ${filesTotal} files · ${chunkCount} chunks kept — resume continues where it stopped.`
-              : "Indexing is paused — resume to continue."}
-          </EmptyDescription>
-        </EmptyHeader>
-        <Button
-          onClick={() => resumeMutation.mutate(repo.id)}
-          disabled={resumeMutation.isPending}
-        >
-          <Play data-icon="inline-start" />
-          Resume indexing
-        </Button>
-      </Empty>
-    );
-  }
-
   return (
-    <Empty className="h-full border-0">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <Loader2 className="animate-spin" />
-        </EmptyMedia>
-        <EmptyTitle>Indexing {repo.fullName}</EmptyTitle>
-        <EmptyDescription>
-          {filesTotal > 0
-            ? `${filesProcessed} of ${filesTotal} files · ${chunkCount} chunks embedded`
-            : "Fetching repository files and preparing embeddings…"}
-        </EmptyDescription>
-      </EmptyHeader>
-      <div className="w-full max-w-sm space-y-2">
-        <Progress value={Math.max(progress, filesTotal ? progress : 12)} />
-        <p className="text-center text-xs text-muted-foreground">
-          You can leave this page open — chat unlocks when indexing finishes.
-        </p>
-        <div className="flex justify-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => pauseMutation.mutate(repo.id)}
-            disabled={pauseMutation.isPending}
-          >
-            <Pause data-icon="inline-start" className="size-3" />
-            Pause indexing
-          </Button>
-        </div>
+    <div className="flex flex-1 items-center justify-center px-4 py-16">
+      <div className="w-full max-w-md">
+        {indexStatus === "FAILED" ? (
+          <>
+            <AlertCircle className="size-5 text-destructive" />
+            <h2 className="mt-3 text-lg font-semibold">Indexing failed</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{errorMessage ?? "Something went wrong."}</p>
+            <button className={`${button} mt-5`} onClick={() => indexMutation.mutate(repo.id)} disabled={indexMutation.isPending}>
+              <RotateCcw className="size-4" /> Try again
+            </button>
+          </>
+        ) : indexStatus === "PAUSED" ? (
+          <>
+            <Pause className="size-5 text-muted-foreground" />
+            <h2 className="mt-3 text-lg font-semibold">Indexing paused</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Stopped at {live.filesProcessed} of {live.filesTotal} files. Resume continues from there.
+            </p>
+            <button className={`${button} mt-5`} onClick={() => resumeMutation.mutate(repo.id)} disabled={resumeMutation.isPending}>
+              <Play className="size-4" /> Resume
+            </button>
+          </>
+        ) : indexStatus === "PENDING" ? (
+          <>
+            <Sparkles className="size-5 text-primary" />
+            <h2 className="mt-3 text-lg font-semibold">Index {repo.name} to start chatting</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              DevPilot downloads the repo once, splits it by class and method, and embeds it with your key.
+            </p>
+            <button className={`${button} mt-5`} onClick={() => indexMutation.mutate(repo.id)} disabled={indexMutation.isPending}>
+              <Sparkles className="size-4" /> Index now
+            </button>
+          </>
+        ) : (
+          <>
+            <h2 className="text-lg font-semibold">Reading {repo.fullName}</h2>
+            <p className="mt-1 mb-5 text-sm text-muted-foreground">Chat opens by itself when this finishes.</p>
+            <RepoProgress repo={live} />
+            <button
+              className="mt-4 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => pauseMutation.mutate(repo.id)}
+              disabled={pauseMutation.isPending}
+            >
+              <Pause className="size-3" /> Pause
+            </button>
+          </>
+        )}
       </div>
-    </Empty>
+    </div>
   );
 }

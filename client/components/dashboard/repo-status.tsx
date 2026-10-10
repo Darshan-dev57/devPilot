@@ -1,5 +1,4 @@
-import type { IndexStatus, Repository } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
+import type { IndexStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function indexStatusLabel(status: IndexStatus) {
@@ -17,60 +16,25 @@ export function indexStatusLabel(status: IndexStatus) {
   }
 }
 
-export function IndexStatusBadge({
-  status,
-  className,
-}: {
-  status: IndexStatus;
-  className?: string;
-}) {
-  const variant =
-    status === "READY"
-      ? "default"
-      : status === "FAILED"
-        ? "destructive"
-        : status === "INDEXING"
-          ? "secondary"
-          : status === "PAUSED"
-            ? "secondary"
-            : "outline";
+const TONE: Record<IndexStatus, string> = {
+  READY: "text-primary bg-accent",
+  INDEXING: "text-foreground bg-secondary",
+  PAUSED: "text-amber-700 bg-amber-500/10 dark:text-amber-300",
+  FAILED: "text-destructive bg-destructive/10",
+  PENDING: "text-muted-foreground bg-secondary",
+};
 
+export function IndexStatusBadge({ status, className }: { status: IndexStatus; className?: string }) {
   return (
-    <Badge variant={variant} className={cn(className)}>
-      {status === "INDEXING" && (
-        <span className="mr-1 size-1.5 animate-pulse rounded-full bg-current" />
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        TONE[status],
+        className
       )}
+    >
+      <span className={cn("size-1.5 rounded-full bg-current", status === "INDEXING" && "animate-pulse")} />
       {indexStatusLabel(status)}
-    </Badge>
-  );
-}
-
-export function languageColor(language: string | null) {
-  const map: Record<string, string> = {
-    TypeScript: "bg-sky-500",
-    JavaScript: "bg-amber-400",
-    Java: "bg-orange-500",
-    Python: "bg-emerald-500",
-    Go: "bg-cyan-500",
-    Rust: "bg-orange-700",
-    Kotlin: "bg-violet-500",
-  };
-  return map[language ?? ""] ?? "bg-muted-foreground";
-}
-
-export function RepoMeta({ repo }: { repo: Repository }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      {repo.language && (
-        <span className="inline-flex items-center gap-1.5">
-          <span
-            className={cn("size-2 rounded-full", languageColor(repo.language))}
-          />
-          {repo.language}
-        </span>
-      )}
-      <span>{repo.defaultBranch}</span>
-      {repo.chunkCount > 0 && <span>{repo.chunkCount.toLocaleString()} chunks</span>}
-    </div>
+    </span>
   );
 }

@@ -67,10 +67,9 @@ public class ChatStreamHandler {
                                 sendErrorAndComplete(emitter, AiErrors.describe(err, provider));
                             },
                             () -> completeStream(emitter, sessionId, fullReply, citations));
-            // Stop paying for tokens nobody will read when the browser goes away.
-            emitter.onCompletion(subscription::dispose);
+            // If the browser goes away mid-answer the answer still finishes and is saved, so
+            // the question never sits in the history without a reply. Only a timeout stops it.
             emitter.onTimeout(subscription::dispose);
-            emitter.onError(err -> subscription.dispose());
         } catch (Exception ex) {
             log.warn("Chat stream setup failed: {}", ex.toString());
             sendErrorAndComplete(emitter, AiErrors.describe(ex, provider));
@@ -104,7 +103,8 @@ public class ChatStreamHandler {
                     .name("token")
                     .data(jsonMapper.writeValueAsString(token)));
         } catch (Exception ex) {
-            throw new IllegalStateException("Client disconnected", ex);
+            // Client disconnected: keep collecting so the full answer is still saved.
+            log.debug("Client left during stream: {}", ex.toString());
         }
     }
 
@@ -126,13 +126,17 @@ public class ChatStreamHandler {
                     .citations(citationMapper.toJson(citations))
                     .build());
 
-            emitter.send(SseEmitter.event()
-                    .name("assistant_message")
-                    .data(toMessageResponse(assistant)));
-            emitter.send(SseEmitter.event().name("done").data("[DONE]"));
-            emitter.complete();
+            try {
+                emitter.send(SseEmitter.event()
+                        .name("assistant_message")
+                        .data(toMessageResponse(assistant)));
+                emitter.send(SseEmitter.event().name("done").data("[DONE]"));
+                emitter.complete();
+            } catch (Exception clientGone) {
+                log.debug("Answer saved; client already left: {}", clientGone.toString());
+            }
         } catch (Exception ex) {
-            log.warn("Failed to complete chat stream: {}", ex.toString());
+            log.warn("Failed to save chat answer: {}", ex.toString());
             sendErrorAndComplete(emitter, "Could not save the answer. Please try again.");
         }
     }
