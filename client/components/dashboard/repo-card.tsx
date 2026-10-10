@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Pause, Play, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowUpRight, Pause, Play, RefreshCw, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 
 import { IndexErrorAlert } from "@/components/dashboard/index-error-alert";
 import { RepoProgress } from "@/components/dashboard/repo-progress";
 import { IndexStatusBadge } from "@/components/dashboard/repo-status";
 import { LanguageIcon } from "@/components/icons/language-icon";
-import { usePauseIndexing, useResumeIndexing, useStartIndexing } from "@/hooks/use-repos";
+import { usePauseIndexing, useRemoveRepo, useResumeIndexing, useStartIndexing } from "@/hooks/use-repos";
 import type { Repository } from "@/lib/api";
 import { lastRunLabel, providerLabel, shortSha } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ export function RepoCard({ repo }: { repo: Repository }) {
   const indexMutation = useStartIndexing();
   const pauseMutation = usePauseIndexing();
   const resumeMutation = useResumeIndexing();
+  const removeMutation = useRemoveRepo();
   const status = repo.indexStatus;
   const isIndexing = status === "INDEXING" || indexMutation.isPending;
   const sha = shortSha(repo.indexedSha);
@@ -85,18 +86,32 @@ export function RepoCard({ repo }: { repo: Repository }) {
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-2 border-t pt-3">
-        {repo.htmlUrl ? (
-          <a
-            href={repo.htmlUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            GitHub <ArrowUpRight className="size-3" />
-          </a>
-        ) : (
-          <span />
-        )}
+        <div className="flex items-center gap-3">
+          {repo.htmlUrl && (
+            <a
+              href={repo.htmlUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              GitHub <ArrowUpRight className="size-3" />
+            </a>
+          )}
+          {!isIndexing && (
+            <button
+              onClick={() => {
+                if (window.confirm(`Remove ${repo.fullName} and its chats from your list?`)) {
+                  removeMutation.mutate(repo);
+                }
+              }}
+              disabled={removeMutation.isPending}
+              aria-label={`Remove ${repo.fullName}`}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="size-3" /> Remove
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           {isIndexing ? (
             <button className={secondaryButton} onClick={() => pauseMutation.mutate(repo.id)} disabled={pauseMutation.isPending}>

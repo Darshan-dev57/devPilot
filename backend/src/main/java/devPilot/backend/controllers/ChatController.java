@@ -20,6 +20,7 @@ import devPilot.backend.dto.ChatMessageResponse;
 import devPilot.backend.dto.ChatSessionResponse;
 import devPilot.backend.dto.CreateChatSessionRequest;
 import devPilot.backend.services.ChatService;
+import devPilot.backend.services.Visitors;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -32,26 +33,29 @@ public class ChatController {
 
     @PostMapping("/sessions")
     public ResponseEntity<ChatSessionResponse> createSession(
-            @Valid @RequestBody CreateChatSessionRequest request) {
-        return ResponseEntity.ok(chatService.createSession(request));
+            @Valid @RequestBody CreateChatSessionRequest request,
+            @RequestHeader(Visitors.HEADER) String visitor) {
+        return ResponseEntity.ok(chatService.createSession(request, Visitors.parse(visitor)));
     }
 
     @GetMapping("/sessions")
-    public List<ChatSessionResponse> listSessions(@RequestParam UUID repositoryId) {
-        return chatService.listSessions(repositoryId);
+    public List<ChatSessionResponse> listSessions(
+            @RequestParam UUID repositoryId, @RequestHeader(Visitors.HEADER) String visitor) {
+        return chatService.listSessions(repositoryId, Visitors.parse(visitor));
     }
 
     @GetMapping("/sessions/{id}")
-    public List<ChatMessageResponse> getMessages(@PathVariable UUID id) {
-        return chatService.getMessages(id);
+    public List<ChatMessageResponse> getMessages(@PathVariable UUID id, @RequestHeader(Visitors.HEADER) String visitor) {
+        return chatService.getMessages(id, Visitors.parse(visitor));
     }
 
     @PostMapping(value = "/sessions/{id}/messages", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sendMessage(
             @PathVariable UUID id,
             @Valid @RequestBody ChatMessageRequest request,
+            @RequestHeader(Visitors.HEADER) String visitor,
             @RequestHeader("X-Api-Key") String apiKey,
             @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
-        return chatService.streamReply(id, request.content(), apiKey, provider);
+        return chatService.streamReply(id, Visitors.parse(visitor), request.content(), apiKey, provider);
     }
 }

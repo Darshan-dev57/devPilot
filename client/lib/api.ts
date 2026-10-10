@@ -88,6 +88,32 @@ export function clearApiKeyFromStorage() {
   localStorage.removeItem(AI_PROVIDER_STORAGE_KEY);
 }
 
+const VISITOR_STORAGE_KEY = "devpilot_visitor_id";
+
+function randomUuid(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // randomUUID needs a secure context (https or localhost); build a v4 UUID by hand otherwise.
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/**
+ * Anonymous id for this browser, made once and kept in localStorage. It is not a login;
+ * it only keeps each visitor's repo list and chats separate from everyone else's.
+ */
+export function getVisitorId(): string {
+  if (typeof window === "undefined") return "";
+  let id = localStorage.getItem(VISITOR_STORAGE_KEY);
+  if (!id) {
+    id = randomUuid();
+    localStorage.setItem(VISITOR_STORAGE_KEY, id);
+  }
+  return id;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -118,6 +144,7 @@ export async function apiFetch<T>(
   const apiKey = getStoredApiKey();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Visitor-Id": getVisitorId(),
     ...(init?.headers as Record<string, string> | undefined),
   };
   if (apiKey) {
@@ -152,6 +179,7 @@ export const api = {
       body: JSON.stringify({ owner, name }),
     }),
   getRepo: (id: string) => apiFetch<Repository>(`/api/repos/${id}`),
+  removeRepo: (id: string) => apiFetch<void>(`/api/repos/${id}`, { method: "DELETE" }),
   startIndex: (id: string) =>
     apiFetch<Repository>(`/api/repos/${id}/index`, { method: "POST" }),
   pauseIndex: (id: string) =>

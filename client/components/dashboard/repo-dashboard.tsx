@@ -72,7 +72,9 @@ export function RepoDashboard() {
       {!reposQuery.isLoading && !reposQuery.isError && repos.length === 0 && (
         <div className="mt-6 rounded-xl border border-dashed p-10 text-center">
           <p className="font-medium">No repos yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">Paste one above. Small repos index in seconds.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Paste one above. Only you see the repos you add here.
+          </p>
         </div>
       )}
       {repos.length > 0 && filtered.length === 0 && (

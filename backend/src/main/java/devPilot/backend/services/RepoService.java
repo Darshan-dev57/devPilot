@@ -1,16 +1,27 @@
 package devPilot.backend.services;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
+import devPilot.backend.entity.ChatSession;
+import devPilot.backend.entity.IndexStatus;
 import devPilot.backend.entity.Repository;
+import devPilot.backend.entity.VisitorRepository;
+import devPilot.backend.exceptions.BadRequestException;
+import devPilot.backend.repository.ChatMessageRepository;
+import devPilot.backend.repository.ChatSessionRepository;
+import devPilot.backend.repository.VisitorRepositoryRepository;
+import devPilot.backend.services.ai.AiProvider;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.RepositoryRepository;
 import devPilot.backend.services.github.GitHubException;
@@ -22,6 +33,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RepoService {
     private final RepositoryRepository repositoryRepository;
+    private final VisitorRepositoryRepository visitorRepos;
+    private final ChatSessionRepository chatSessions;
+    private final ChatMessageRepository chatMessages;
+    private final JdbcTemplate jdbcTemplate;
     private final GithubApiClient gitHubApiClient;
 
     /**
@@ -33,7 +48,15 @@ public class RepoService {
      * that already exist.
      */
     @Transactional
-    public Repository addPublicRepo(String owner, String name) {
+    public Repository addPublicRepo(String owner, String name, UUID visitorId) {
+        Repository repo = findOrCreate(owner, name);
+        if (!visitorRepos.existsByVisitorIdAndRepositoryId(visitorId, repo.getId())) {
+            visitorRepos.save(VisitorRepository.builder().visitorId(visitorId).repositoryId(repo.getId()).build());
+        }
+        return repo;
+    }
+
+    private Repository findOrCreate(String owner, String name) {
         Map<String, Object> remote = gitHubApiClient.getRepository(owner, name);
         if (remote == null || remote.get("id") == null) {
             throw new GitHubException(GitHubException.Kind.NOT_FOUND, "Repository not found.");
@@ -54,28 +77,66 @@ public class RepoService {
     }
 
     /**
-     * Every repository that visitors have added. There is deliberately no sync-from-GitHub
-     * path: the server token belongs to the operator, not the visitor, so syncing would
-     * publish the operator's own (possibly private) repositories to anonymous callers.
-     * Repositories only enter the list through an explicit add-by-URL.
+     * The repositories this visitor added, newest first. Nobody sees anyone else's list.
+     * There is no sync-from-GitHub path: repos only enter through an explicit add-by-URL.
      */
     @Transactional(readOnly = true)
-    public List<RepositoryResponse> listStored() {
-        return repositoryRepository.findAll().stream()
-                .sorted((a, b) -> a.getFullName().compareToIgnoreCase(b.getFullName()))
-                .map(this::toResponse)
+    public List<RepositoryResponse> listFor(UUID visitorId) {
+        List<UUID> ids = visitorRepos.findByVisitorIdOrderByCreatedAtDesc(visitorId).stream()
+                .map(VisitorRepository::getRepositoryId)
                 .toList();
+        Map<UUID, Repository> byId = new HashMap<>();
+        repositoryRepository.findAllById(ids).forEach(r -> byId.put(r.getId(), r));
+        return ids.stream().map(byId::get).filter(Objects::nonNull).map(this::toResponse).toList();
     }
 
+    /** The repository, if this visitor has it in their list; 404 otherwise. */
     @Transactional(readOnly = true)
-    public Repository requireOwned(UUID repoId) {
+    public Repository requireVisible(UUID repoId, UUID visitorId) {
+        if (!visitorRepos.existsByVisitorIdAndRepositoryId(visitorId, repoId)) {
+            throw new NotFoundException("Repository not found");
+        }
         return repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
     }
 
+    /**
+     * Removes the repo from this visitor's list along with their chats. When nobody else
+     * has it, the repository row and its vectors are deleted too.
+     */
+    @Transactional
+    public void remove(UUID repoId, UUID visitorId) {
+        Repository repo = requireVisible(repoId, visitorId);
+        boolean lastUser = visitorRepos.countByRepositoryId(repoId) <= 1;
+        if (lastUser && repo.getIndexStatus() == IndexStatus.INDEXING) {
+            throw new BadRequestException("This repo is being indexed. Pause it first, then remove it.");
+        }
+        deleteChats(chatSessions.findByRepositoryIdAndVisitorId(repoId, visitorId));
+        visitorRepos.deleteByVisitorIdAndRepositoryId(visitorId, repoId);
+        if (lastUser) {
+            deleteChats(chatSessions.findByRepositoryId(repoId));
+            for (AiProvider provider : AiProvider.values()) {
+                String table = provider.tableName();
+                Boolean exists = jdbcTemplate.queryForObject("select to_regclass(?) is not null", Boolean.class, "public." + table);
+                if (Boolean.TRUE.equals(exists)) {
+                    jdbcTemplate.update("delete from public." + table + " where metadata->>'repoId' = ?", repoId.toString());
+                }
+            }
+            repositoryRepository.delete(repo);
+        }
+    }
+
+    private void deleteChats(List<ChatSession> sessions) {
+        if (sessions.isEmpty()) {
+            return;
+        }
+        chatMessages.deleteBySessionIdIn(sessions.stream().map(ChatSession::getId).toList());
+        chatSessions.deleteAll(sessions);
+    }
+
     @Transactional(readOnly = true)
-    public IndexStatusResponse status(UUID repoId) {
-        Repository repo = requireOwned(repoId);
+    public IndexStatusResponse status(UUID repoId, UUID visitorId) {
+        Repository repo = requireVisible(repoId, visitorId);
         return new IndexStatusResponse(
                 repo.getId(),
                 repo.getIndexStatus(),

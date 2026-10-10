@@ -153,6 +153,24 @@ export function useAddPublicRepo() {
   });
 }
 
+/** Removes a repo from this visitor's list (the server deletes its data if nobody else has it). */
+export function useRemoveRepo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (repo: Repository) => api.removeRepo(repo.id).then(() => repo),
+    onSuccess: (repo) => {
+      queryClient.setQueryData<Repository[]>(queryKeys.repos.list(), (current) =>
+        current?.filter((item) => item.id !== repo.id)
+      );
+      toast.add({ title: "Removed", description: `${repo.fullName} is no longer in your list.`, type: "success" });
+    },
+    onError: (error: Error) => {
+      toast.add({ title: "Could not remove repository", description: error.message, type: "error" });
+    },
+  });
+}
+
 /** Re-reads the list of repositories visitors have added. */
 export function useRefreshRepos() {
   const queryClient = useQueryClient();

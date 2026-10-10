@@ -2,6 +2,7 @@ import {
   getApiBaseUrl,
   getStoredApiKey,
   getStoredProvider,
+  getVisitorId,
   ApiError,
   type ChatMessage,
 } from "@/lib/api";
@@ -24,7 +25,10 @@ export async function streamChatMessage(
   // these headers are set here too. Streaming uses raw fetch rather than
   // apiFetch because the response body is consumed as a stream, not as JSON.
   const apiKey = getStoredApiKey();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Visitor-Id": getVisitorId(),
+  };
   if (apiKey) {
     headers["X-Api-Key"] = apiKey;
     headers["X-AI-Provider"] = getStoredProvider();
@@ -34,7 +38,6 @@ export async function streamChatMessage(
     `${getApiBaseUrl()}/api/chat/sessions/${sessionId}/messages`,
     {
       method: "POST",
-      credentials: "include",
       headers,
       body: JSON.stringify({ content }),
       signal: handlers.signal,

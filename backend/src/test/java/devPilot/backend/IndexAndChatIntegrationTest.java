@@ -108,6 +108,9 @@ class IndexAndChatIntegrationTest {
 
     static String repoId;
 
+    static final String VISITOR_A = "11111111-1111-1111-1111-111111111111";
+    static final String VISITOR_B = "22222222-2222-2222-2222-222222222222";
+
     private static FakeGitHub startGitHub() {
         try {
             FakeGitHub gitHub = new FakeGitHub();
@@ -182,6 +185,7 @@ class IndexAndChatIntegrationTest {
         String sessionId = json.readTree(session.body()).get("id").asString();
         HttpRequest request = HttpRequest.newBuilder(uri("/api/chat/sessions/" + sessionId + "/messages"))
                 .header("Content-Type", "application/json")
+                .header("X-Visitor-Id", VISITOR_A)
                 .header("X-Api-Key", "AIza-gemini")
                 .header("X-AI-Provider", "gemini")
                 .POST(HttpRequest.BodyPublishers.ofString("{\"content\":\"hi\"}"))
@@ -221,6 +225,7 @@ class IndexAndChatIntegrationTest {
         int before = countVectors();
         GITHUB.commit(Map.of("src/A.java", "class A {}\n"));
         HttpRequest request = HttpRequest.newBuilder(uri("/api/repos/" + repoId + "/index"))
+                .header("X-Visitor-Id", VISITOR_A)
                 .header("X-Api-Key", "bad-key").header("X-AI-Provider", "openai")
                 .POST(HttpRequest.BodyPublishers.noBody()).build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
@@ -232,6 +237,39 @@ class IndexAndChatIntegrationTest {
         assertThat(waitWhileIndexing().get("indexStatus").asString()).isEqualTo("READY");
     }
 
+    @Test
+    @Order(7)
+    void eachVisitorOnlySeesTheirOwnReposAndChats() throws Exception {
+        assertThat(json.readTree(get("/api/repos", VISITOR_B).body()).size()).isZero();
+        assertThat(get("/api/repos/" + repoId, VISITOR_B).statusCode()).isEqualTo(404);
+        assertThat(get("/api/repos", "not-a-uuid").statusCode()).isEqualTo(400);
+        assertThat(http.send(HttpRequest.newBuilder(uri("/api/repos")).build(), HttpResponse.BodyHandlers.ofString())
+                .statusCode()).isEqualTo(400);
+
+        // B adds the same repo: it is already indexed, so B can chat without re-embedding.
+        HttpResponse<String> added = post("/api/repos/by-url", "{\"owner\":\"acme\",\"name\":\"demo\"}", null, VISITOR_B);
+        assertThat(json.readTree(added.body()).get("id").asString()).isEqualTo(repoId);
+        assertThat(json.readTree(added.body()).get("indexStatus").asString()).isEqualTo("READY");
+        assertThat(json.readTree(get("/api/chat/sessions?repositoryId=" + repoId, VISITOR_B).body()).size())
+                .as("A's chats stay private").isZero();
+    }
+
+    @Test
+    @Order(8)
+    void removingDeletesDataOnlyWhenTheLastVisitorLeaves() throws Exception {
+        assertThat(delete("/api/repos/" + repoId, VISITOR_B).statusCode()).isEqualTo(204);
+        assertThat(json.readTree(get("/api/repos", VISITOR_B).body()).size()).isZero();
+        assertThat(json.readTree(get("/api/repos", VISITOR_A).body()).size()).isEqualTo(1);
+        assertThat(countVectors()).isPositive();
+
+        assertThat(delete("/api/repos/" + repoId, VISITOR_A).statusCode()).isEqualTo(204);
+        assertThat(json.readTree(get("/api/repos", VISITOR_A).body()).size()).isZero();
+        assertThat(countVectors()).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from repositories", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from chat_sessions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from chat_messages", Integer.class)).isZero();
+    }
+
     private JsonNode indexAndWait() throws Exception {
         assertThat(post("/api/repos/" + repoId + "/index", "", KEY).statusCode()).isEqualTo(202);
         return waitWhileIndexing();
@@ -240,14 +278,23 @@ class IndexAndChatIntegrationTest {
     private JsonNode waitWhileIndexing() throws Exception {
         long deadline = System.currentTimeMillis() + 30_000;
         while (true) {
-            HttpResponse<String> response = http.send(HttpRequest.newBuilder(uri("/api/repos/" + repoId + "/status")).build(),
-                    HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = get("/api/repos/" + repoId + "/status", VISITOR_A);
             JsonNode status = json.readTree(response.body());
             if (!"INDEXING".equals(status.get("indexStatus").asString()) || System.currentTimeMillis() > deadline) {
                 return status;
             }
             Thread.sleep(100);
         }
+    }
+
+    private HttpResponse<String> get(String path, String visitor) throws Exception {
+        return http.send(HttpRequest.newBuilder(uri(path)).header("X-Visitor-Id", visitor).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> delete(String path, String visitor) throws Exception {
+        return http.send(HttpRequest.newBuilder(uri(path)).header("X-Visitor-Id", visitor).DELETE().build(),
+                HttpResponse.BodyHandlers.ofString());
     }
 
     private int countVectors() {
@@ -266,9 +313,14 @@ class IndexAndChatIntegrationTest {
     }
 
     private HttpResponse<String> post(String path, String body, String apiKey) throws Exception {
+        return post(path, body, apiKey, VISITOR_A);
+    }
+
+    private HttpResponse<String> post(String path, String body, String apiKey, String visitor) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(uri(path))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
+                .header("X-Visitor-Id", visitor)
                 .POST(HttpRequest.BodyPublishers.ofString(body));
         if (apiKey != null) {
             request.header("X-Api-Key", apiKey).header("X-AI-Provider", "openai");

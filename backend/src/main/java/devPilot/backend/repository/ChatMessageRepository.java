@@ -1,5 +1,6 @@
 package devPilot.backend.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -9,4 +10,6 @@ import devPilot.backend.entity.ChatMessage;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> {
     List<ChatMessage> findBySessionIdOrderByCreatedAtAsc(UUID sessionId);
+
+    void deleteBySessionIdIn(Collection<UUID> sessionIds);
 }
