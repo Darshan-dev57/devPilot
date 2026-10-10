@@ -34,4 +34,17 @@ class AiErrorsTest {
         String message = AiErrors.describe(new IllegalStateException("{\"secret\":\"internal trace\"}"), AiProvider.OPENAI);
         assertThat(message).doesNotContain("secret").startsWith("OpenAI returned an error");
     }
+
+    @Test
+    void aVisitorsGeminiFreeTierCapIsAQuotaNotAnEmptyBalance() {
+        // What Google answered on 2026-10-10 once a free key's 1000 daily embedding calls were spent.
+        var daily = HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", null,
+                ("{\"error\":{\"code\":429,\"message\":\"You exceeded your current quota, please check your plan and billing details. "
+                        + "* Quota exceeded for metric: generativelanguage.googleapis.com/embed_content_free_tier_requests, limit: 1000\","
+                        + "\"status\":\"RESOURCE_EXHAUSTED\"}}").getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        assertThat(AiErrors.describe(daily, AiProvider.GEMINI, true))
+                .isEqualTo("Your Gemini key used up its free daily quota. Try again tomorrow, or use another key.");
+        assertThat(AiErrors.describe(new RuntimeException("429 rate limit"), AiProvider.GEMINI, true))
+                .isEqualTo("Your Gemini key hit its rate limit. Wait a minute and try again.");
+    }
 }

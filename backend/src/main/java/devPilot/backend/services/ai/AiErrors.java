@@ -29,13 +29,21 @@ public final class AiErrors {
                     + "\"Use your own key\", or use a Gemini key.";
         }
         if (eq(status, 401) || eq(status, 403) || lower.contains("invalid_api_key") || lower.contains("incorrect api key")
+                || lower.contains("authentication_error") || lower.contains("invalid x-api-key")
                 || lower.contains("api key not valid") || lower.contains("api_key_invalid") || lower.contains("permission_denied")) {
             return visitorKey
                     ? "Your " + name + " key was rejected. Check it in \"Use your own key\"."
                     : "The server's " + name + " key was rejected. The site owner needs to check it.";
         }
+        if (visitorKey && provider == AiProvider.GEMINI && isRateLimit(error)) {
+            // Google's free tier says "exceeded your current quota ... billing" for its
+            // per-day caps too, so this is a quota, not an empty balance.
+            return lower.contains("perday") || lower.contains("per day") || lower.contains("free_tier")
+                    ? "Your Gemini key used up its free daily quota. Try again tomorrow, or use another key."
+                    : "Your Gemini key hit its rate limit. Wait a minute and try again.";
+        }
         if (visitorKey && (eq(status, 402) || lower.contains("insufficient_quota") || lower.contains("insufficient balance")
-                || lower.contains("billing"))) {
+                || lower.contains("credit balance") || lower.contains("exceeded your current quota") || lower.contains("billing"))) {
             return "Your " + name + " account has no credit left. Top it up or remove your key to use the free allowance.";
         }
         if (isRateLimit(error)) {
@@ -54,8 +62,11 @@ public final class AiErrors {
         if (eq(status, 404) || lower.contains("model_not_found") || lower.contains("does not exist")
                 || lower.contains("not found")) {
             return visitorKey
-                    ? "The " + name + " model is not available for your key."
+                    ? "The " + name + " model you picked is not available for your key. Check the model name in \"Use your own key\"."
                     : "The configured " + name + " model is not available. The site owner needs to check the model name.";
+        }
+        if (eq(status, 529) || lower.contains("overloaded_error")) {
+            return name + " is overloaded right now. Try again in a minute.";
         }
         if (lower.contains("timed out") || lower.contains("timeout") || lower.contains("connect")) {
             return name + " did not respond in time. Try again.";
@@ -96,6 +107,10 @@ public final class AiErrors {
             if (t instanceof RestClientResponseException rest) {
                 text.append(' ').append(rest.getResponseBodyAsString());
             }
+            String sdkBody = bodyFromSdk(t);
+            if (sdkBody != null) {
+                text.append(' ').append(sdkBody);
+            }
             if (t.getCause() == t) {
                 break;
             }
@@ -108,6 +123,16 @@ public final class AiErrors {
     }
 
     /** The OpenAI Java SDK throws its own exception types that expose statusCode(). */
+    /** The OpenAI SDK keeps the provider's error JSON in body(), not in the message. */
+    private static String bodyFromSdk(Throwable t) {
+        try {
+            Object value = t.getClass().getMethod("body").invoke(t);
+            return value == null ? null : value.toString();
+        } catch (ReflectiveOperationException | RuntimeException ex) {
+            return null;
+        }
+    }
+
     private static Integer statusFromSdk(Throwable t) {
         try {
             var method = t.getClass().getMethod("statusCode");
