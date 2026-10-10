@@ -52,6 +52,7 @@ class GithubApiClientTest {
 
         assertThat(anonymous.translate(404, null, null).getKind()).isEqualTo(Kind.NOT_FOUND);
         assertThat(anonymous.translate(401, null, null).getKind()).isEqualTo(Kind.BAD_SERVER_TOKEN);
+        assertThat(anonymous.translate(409, null, null).getMessage()).startsWith("This repository is empty");
 
         GitHubException limited = anonymous.translate(403, "0", "1791625830");
         assertThat(limited.getKind()).isEqualTo(Kind.RATE_LIMITED);

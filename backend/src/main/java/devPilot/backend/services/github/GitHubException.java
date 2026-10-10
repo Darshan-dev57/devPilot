@@ -11,6 +11,7 @@ public class GitHubException extends RuntimeException {
     public enum Kind {
         NOT_FOUND,
         PRIVATE_REPO,
+        EMPTY_REPO,
         RATE_LIMITED,
         BAD_SERVER_TOKEN,
         UNAVAILABLE

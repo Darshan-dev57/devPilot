@@ -221,6 +221,10 @@ public class GithubApiClient {
             return new GitHubException(Kind.NOT_FOUND,
                     "Repository not found. Check the owner/name, and note that private repos are not supported.");
         }
+        if (status == HttpStatus.CONFLICT.value()) {
+            // GitHub answers 409 "Git Repository is empty" for a repo with no commits.
+            return new GitHubException(Kind.EMPTY_REPO, "This repository is empty, so there is no code to index yet.");
+        }
         if (status == HttpStatus.UNAUTHORIZED.value()) {
             log.error("GitHub rejected the server token (app.github.token). Fix or remove it.");
             return new GitHubException(Kind.BAD_SERVER_TOKEN,
