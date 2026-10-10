@@ -47,4 +47,12 @@ class AiErrorsTest {
         assertThat(AiErrors.describe(new RuntimeException("429 rate limit"), AiProvider.GEMINI, true))
                 .isEqualTo("Your Gemini key hit its rate limit. Wait a minute and try again.");
     }
+
+    @Test
+    void providerHiccupsAreRetried() {
+        var error = HttpClientErrorException.create(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini error", null,
+                "{\"error\":{\"code\":500,\"status\":\"INTERNAL\"}}".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        assertThat(AiErrors.isTransient(error)).isTrue();
+        assertThat(AiErrors.isTransient(new RuntimeException("invalid x-api-key"))).isFalse();
+    }
 }

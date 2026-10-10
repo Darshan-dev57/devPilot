@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -62,9 +64,34 @@ public class CodeContextRetriever {
             if (!context.isEmpty()) {
                 context.append("\n\n---\n\n");
             }
-            context.append(document.getText());
+            context.append(numberLines(document.getText()));
         }
         return new RetrievedContext(citations, context.isEmpty() ? NO_MATCHES : context.toString());
+    }
+
+    private static final Pattern HEADER = Pattern.compile("\\AFile: [^\\n]* \\(lines (\\d+)-\\d+\\)\\n(?:In: [^\\n]*\\n)?\\n");
+
+    /**
+     * Prefixes each code line of a chunk with its line number in the file ("36| ..."), so
+     * the model can cite the exact lines instead of the whole chunk. Chunks without the
+     * indexer's header are left as they are.
+     */
+    static String numberLines(String text) {
+        Matcher header = HEADER.matcher(text);
+        if (!header.find()) {
+            return text;
+        }
+        int line = Integer.parseInt(header.group(1));
+        StringBuilder out = new StringBuilder(text.length() + 256).append(header.group());
+        String[] lines = text.substring(header.end()).split("\\n", -1);
+        int count = lines.length;
+        if (count > 0 && lines[count - 1].isEmpty()) {
+            count--;
+        }
+        for (int i = 0; i < count; i++) {
+            out.append(line + i).append("| ").append(lines[i]).append('\n');
+        }
+        return out.toString();
     }
 
     private static CitationDto widen(CitationDto a, CitationDto b) {

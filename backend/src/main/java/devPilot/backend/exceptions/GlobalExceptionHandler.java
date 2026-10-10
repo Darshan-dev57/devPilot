@@ -60,6 +60,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (ex.getKind()) {
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
             case PRIVATE_REPO -> HttpStatus.FORBIDDEN;
+            case EMPTY_REPO -> HttpStatus.BAD_REQUEST;
             case RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             case BAD_SERVER_TOKEN, UNAVAILABLE -> HttpStatus.BAD_GATEWAY;
         };

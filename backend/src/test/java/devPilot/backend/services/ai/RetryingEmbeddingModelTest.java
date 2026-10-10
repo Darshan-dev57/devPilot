@@ -100,4 +100,26 @@ class RetryingEmbeddingModelTest {
             return new float[] { 1f };
         }
     }
+
+    @Test
+    void googlesDailyCapFailsAtOnceInsteadOfWaitingAMinuteAtATime() {
+        // What Google sent on 2026-10-10 once 1000 embedding calls were spent for the day.
+        String body = "{\"error\":{\"code\":429,\"message\":\"You exceeded your current quota. * Quota exceeded for metric: "
+                + "generativelanguage.googleapis.com/embed_content_free_tier_requests, limit: 1000\\nPlease retry in 12h51m36.817478049s.\","
+                + "\"status\":\"RESOURCE_EXHAUSTED\",\"details\":[{\"quotaId\":\"EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier\"},"
+                + "{\"retryDelay\":\"46296s\"}]}}";
+        var daily = HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", null,
+                body.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        AtomicInteger calls = new AtomicInteger();
+        var model = new RetryingEmbeddingModel(new Fake(calls, 99, daily), 1, 8);
+        RetryingEmbeddingModel.WAIT_LISTENER.set(p -> { });
+        try {
+            assertThatThrownBy(() -> model.call(new EmbeddingRequest(List.of("a"), null)))
+                    .isInstanceOf(RetryingEmbeddingModel.DailyQuotaException.class);
+        } finally {
+            RetryingEmbeddingModel.WAIT_LISTENER.remove();
+        }
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(RetryingEmbeddingModel.isDailyCap(geminiPerMinute429())).isFalse();
+    }
 }

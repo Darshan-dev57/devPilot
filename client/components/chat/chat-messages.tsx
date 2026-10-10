@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { DevPilotIcon } from "@/components/icons/devpilot-icon";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
-import { CitationChips } from "@/components/chat/citation-chips";
+import { CitationChips, lineHref } from "@/components/chat/citation-chips";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ChatMessage, Repository } from "@/lib/api";
 
@@ -74,7 +74,11 @@ export function ChatMessages({
             <UserBubble key={message.id} text={message.content} />
           ) : (
             <AssistantBlock key={message.id}>
-              <ChatMarkdown content={message.content} />
+              <ChatMarkdown
+                content={message.content}
+                sourceFiles={(message.citations ?? []).map((c) => c.filePath)}
+                lineHref={(path, start, end) => lineHref(repo, path, start, end)}
+              />
               <CitationChips repo={repo} citations={message.citations ?? []} />
             </AssistantBlock>
           )

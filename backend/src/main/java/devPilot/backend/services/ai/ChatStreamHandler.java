@@ -18,6 +18,7 @@ import devPilot.backend.entity.MessageRole;
 import devPilot.backend.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.util.retry.Retry;
 import org.springframework.beans.factory.annotation.Value;
 import tools.jackson.databind.json.JsonMapper;
@@ -59,17 +60,20 @@ public class ChatStreamHandler {
                     .name("user_message")
                     .data(savedUserMessage));
 
-            Disposable subscription = ChatClient.builder(model)
+            // defer: each retry builds a fresh request. Re-subscribing to one ChatClient
+            // stream fails with "No StreamAdvisors available to execute".
+            Disposable subscription = Flux.defer(() -> ChatClient.builder(model)
                     .build()
                     .prompt()
                     .system(systemPrompt)
                     .user(userPrompt)
                     .stream()
-                    .content()
-                    // A free tier answers 429 when too many requests land in one minute. Wait
-                    // and retry twice, but only before any text went out, so nothing repeats.
+                    .content())
+                    // A free tier answers 429 when too many requests land in one minute, and
+                    // providers drop the odd request with a 500/503. Wait and retry twice, but
+                    // only before any text went out, so nothing repeats.
                     .retryWhen(Retry.backoff(2, Duration.ofMillis(rateLimitBackoffMs))
-                            .filter(err -> fullReply.isEmpty() && AiErrors.isRateLimit(err))
+                            .filter(err -> fullReply.isEmpty() && (AiErrors.isRateLimit(err) || AiErrors.isTransient(err)))
                             .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                     .subscribe(
                             token -> appendToken(emitter, fullReply, token),

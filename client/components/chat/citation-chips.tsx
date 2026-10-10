@@ -4,6 +4,12 @@ import { FileCode2 } from "lucide-react";
 
 import type { Citation, Repository } from "@/lib/api";
 
+/** Link to lines of a file at the exact commit that was indexed, so line numbers match. */
+export function lineHref(repo: Repository, path: string, start: number, end: number) {
+  const ref = repo.indexedSha ?? repo.defaultBranch;
+  return `https://github.com/${repo.fullName}/blob/${ref}/${path}#L${start}${end !== start ? `-L${end}` : ""}`;
+}
+
 /** Link to the cited lines at the exact commit that was indexed, so line numbers match. */
 export function citationHref(repo: Repository, citation: Citation) {
   const ref = repo.indexedSha ?? repo.defaultBranch;
