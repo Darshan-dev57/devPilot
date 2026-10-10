@@ -12,51 +12,61 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { clearOwnKeys, getOwnKeys, saveOwnKeys } from "@/lib/own-keys";
+import { PROVIDERS, clearOwnKeys, getOwnKeys, providerInfo, saveOwnKeys, type ChatProvider } from "@/lib/own-keys";
 import { cn } from "@/lib/utils";
 
 const field =
   "h-10 w-full rounded-md border bg-background px-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 /**
- * Optional: a visitor pastes their own Gemini and/or OpenCode Zen key to go past the
- * free daily limits. Keys stay in this browser and are sent only with their requests.
+ * Optional: a visitor picks Gemini, OpenAI, Claude or OpenCode Zen and pastes their own
+ * key to go past the free daily limits. Keys stay in this browser and are sent only with
+ * their requests.
  */
 export function OwnKeyButton({ className, label = "Use your own key" }: { className?: string; label?: string }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [keys, setKeys] = useState(getOwnKeys);
   const saved = getOwnKeys();
-  const hasSaved = Boolean(saved.gemini || saved.opencode);
+  const hasSaved = Boolean(saved.key);
+  const info = providerInfo(keys.provider);
 
   const close = () => {
     setOpen(false);
     void queryClient.invalidateQueries();
   };
 
+  const openDialog = () => {
+    const current = getOwnKeys();
+    setKeys({ ...current, model: current.model || providerInfo(current.provider).model });
+    setOpen(true);
+  };
+
+  const pick = (provider: ChatProvider) => {
+    // Keep a model the visitor typed only while they stay on the same provider.
+    setKeys({ ...keys, provider, model: providerInfo(provider).model, key: provider === keys.provider ? keys.key : "" });
+  };
+
   return (
     <>
       <button
         type="button"
-        onClick={() => {
-          setKeys(getOwnKeys());
-          setOpen(true);
-        }}
+        onClick={openDialog}
         className={cn(
           "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border bg-card px-2.5 text-xs font-medium hover:bg-secondary",
           className
         )}
       >
         <KeyRound className="size-3.5" />
-        {hasSaved ? "Your key" : label}
+        {hasSaved ? `Your ${providerInfo(saved.provider).label} key` : label}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Use your own key</DialogTitle>
             <DialogDescription>
-              Optional. With your own key there is no daily limit. It stays in this browser and is sent only with your
-              requests; the server never saves or logs it.
+              Optional. With your own key there is no daily question limit. It stays in this browser and is sent only
+              with your requests; the server never saves or logs it.
             </DialogDescription>
           </DialogHeader>
 
@@ -69,48 +79,78 @@ export function OwnKeyButton({ className, label = "Use your own key" }: { classN
             }}
           >
             <label className="grid gap-1.5">
-              <span className="text-sm font-medium">Gemini API key</span>
+              <span className="text-sm font-medium">Answers from</span>
+              <select
+                value={keys.provider}
+                onChange={(e) => pick(e.target.value as ChatProvider)}
+                className={cn(field, "font-sans")}
+              >
+                {PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1.5">
+              <span className="text-sm font-medium">{info.label} API key</span>
               <input
                 type="password"
                 autoComplete="off"
                 spellCheck={false}
-                value={keys.gemini}
-                onChange={(e) => setKeys({ ...keys, gemini: e.target.value })}
-                placeholder="AIza..."
+                value={keys.key}
+                onChange={(e) => setKeys({ ...keys, key: e.target.value })}
+                placeholder={info.placeholder}
                 className={field}
               />
               <span className="text-xs text-muted-foreground">
-                Indexing and answers. Free from{" "}
-                <a className="underline underline-offset-2" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-                  Google AI Studio
+                Get one at{" "}
+                <a className="underline underline-offset-2" href={info.keyUrl} target="_blank" rel="noreferrer">
+                  {new URL(info.keyUrl).hostname}
                 </a>
-                .
+                .{keys.provider === "gemini" && " Free tier available."}
+                {keys.provider === "opencode" && " Use a paid model: Zen's free models only work inside the OpenCode app."}
               </span>
             </label>
 
             <label className="grid gap-1.5">
-              <span className="text-sm font-medium">OpenCode Zen API key</span>
+              <span className="text-sm font-medium">Model</span>
               <input
-                type="password"
-                autoComplete="off"
+                value={keys.model}
+                onChange={(e) => setKeys({ ...keys, model: e.target.value })}
+                placeholder={info.model}
                 spellCheck={false}
-                value={keys.opencode}
-                onChange={(e) => setKeys({ ...keys, opencode: e.target.value })}
-                placeholder="sk-..."
-                className={field}
-              />
-              <input
-                value={keys.opencodeModel}
-                onChange={(e) => setKeys({ ...keys, opencodeModel: e.target.value })}
-                placeholder="Model, default deepseek-v4.1-flash"
-                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
                 className={cn(field, "h-9 text-xs")}
               />
-              <span className="text-xs text-muted-foreground">
-                Answers only (Zen has no embeddings). Needs a paid model on the chat endpoint: Zen&apos;s free models
-                only work inside the OpenCode app.
-              </span>
             </label>
+
+            {keys.provider === "gemini" ? (
+              <p className="rounded-md bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+                Your Gemini key does both: indexing and answers.
+              </p>
+            ) : (
+              <label className="grid gap-1.5">
+                <span className="text-sm font-medium">
+                  Gemini key for indexing <span className="font-normal text-muted-foreground">(optional)</span>
+                </span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={keys.indexGemini}
+                  onChange={(e) => setKeys({ ...keys, indexGemini: e.target.value })}
+                  placeholder="AIza..."
+                  className={field}
+                />
+                <span className="text-xs text-muted-foreground">
+                  {info.label} key answers questions only. Indexing needs embeddings, which run on Gemini: your key if
+                  you add one here, otherwise the free server key (counts toward the daily index limit).
+                </span>
+              </label>
+            )}
 
             <DialogFooter className="gap-2 sm:justify-between">
               {hasSaved ? (
@@ -123,7 +163,7 @@ export function OwnKeyButton({ className, label = "Use your own key" }: { classN
                   }}
                   className="h-9 rounded-md px-3 text-sm text-destructive hover:bg-destructive/10"
                 >
-                  Remove my keys
+                  Remove my key
                 </button>
               ) : (
                 <span />

@@ -19,7 +19,7 @@ export function UsageBanner({ kind = "both", className }: { kind?: "both" | "que
   const { data } = useUsage();
   if (!data) return null;
 
-  const own = data.ownGeminiKey || data.ownOpencodeKey;
+  const own = data.ownGeminiKey || data.ownChatKey;
 
   if (!data.configured && !own) {
     return (
@@ -41,8 +41,11 @@ export function UsageBanner({ kind = "both", className }: { kind?: "both" | "que
   const out = outOfQuestions || outOfIndexes;
 
   let text: string;
-  if (own) {
-    text = `Using your own ${data.ownOpencodeKey ? "OpenCode Zen" : "Gemini"} key, no daily limit`;
+  if (own && (data.ownGeminiKey || kind === "questions")) {
+    text = `Your own ${data.provider} key, no daily limit`;
+  } else if (own) {
+    // Answers on their key; indexing still runs on the free server key.
+    text = `Your own ${data.provider} key answers · free today: ${left(data.indexesLeft, data.indexesPerDay, "index runs")} left`;
   } else {
     const parts = [left(data.questionsLeft, data.questionsPerDay, "questions")];
     if (kind === "both") parts.push(left(data.indexesLeft, data.indexesPerDay, "index runs"));

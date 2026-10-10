@@ -51,7 +51,8 @@ export type Usage = {
   indexesLeft: number;
   indexesPerDay: number;
   ownGeminiKey: boolean;
-  ownOpencodeKey: boolean;
+  /** Answers run on the visitor's own key (any provider). */
+  ownChatKey: boolean;
 };
 
 export type ChatSession = {
