@@ -23,5 +23,10 @@ public record RepositoryResponse(
         int chunkCount,
         int filesTotal,
         int filesProcessed,
-        String errorMessage) {
+        String errorMessage,
+        String indexedSha,
+        String embeddingProvider,
+        String lastIndexMode,
+        Long lastIndexDurationMs,
+        String indexPhase) {
 }

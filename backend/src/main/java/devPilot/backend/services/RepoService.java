@@ -5,16 +5,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.HttpStatusCodeException;
 
 import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
 import devPilot.backend.entity.Repository;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.RepositoryRepository;
+import devPilot.backend.services.github.GitHubException;
 import devPilot.backend.services.github.GithubApiClient;
 
 import lombok.RequiredArgsConstructor;
@@ -35,17 +34,15 @@ public class RepoService {
      */
     @Transactional
     public Repository addPublicRepo(String owner, String name) {
-        Map<String, Object> remote;
-        try {
-            remote = gitHubApiClient.getRepository(owner, name);
-        } catch (HttpStatusCodeException ex) {
-            if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
-                throw new NotFoundException("Repository not found or not accessible");
-            }
-            throw ex;
-        }
+        Map<String, Object> remote = gitHubApiClient.getRepository(owner, name);
         if (remote == null || remote.get("id") == null) {
-            throw new NotFoundException("Repository not found or not accessible");
+            throw new GitHubException(GitHubException.Kind.NOT_FOUND, "Repository not found.");
+        }
+        // The server token may be able to read the operator's own private repos. Anyone can
+        // paste a URL here, so private repos must never be indexed or exposed.
+        if (Boolean.TRUE.equals(remote.get("private"))) {
+            throw new GitHubException(GitHubException.Kind.PRIVATE_REPO,
+                    "That repository is private. DevPilot only works with public repos.");
         }
         Long githubRepoId = toLong(remote.get("id"));
         return repositoryRepository.findByGithubRepoId(githubRepoId)
@@ -86,7 +83,11 @@ public class RepoService {
                 repo.getFilesProcessed(),
                 repo.getChunkCount(),
                 repo.getIndexedAt(),
-                repo.getErrorMessage());
+                repo.getErrorMessage(),
+                repo.getIndexPhase(),
+                repo.getIndexedSha(),
+                repo.getLastIndexMode(),
+                repo.getLastIndexDurationMs());
     }
 
     public RepositoryResponse toResponse(Repository repo) {
@@ -106,7 +107,12 @@ public class RepoService {
                 repo.getChunkCount(),
                 repo.getFilesTotal(),
                 repo.getFilesProcessed(),
-                repo.getErrorMessage());
+                repo.getErrorMessage(),
+                repo.getIndexedSha(),
+                repo.getEmbeddingProvider(),
+                repo.getLastIndexMode(),
+                repo.getLastIndexDurationMs(),
+                repo.getIndexPhase());
     }
 
     private static Long toLong(Object value) {
