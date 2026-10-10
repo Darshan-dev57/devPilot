@@ -5,7 +5,7 @@ import { Search } from "lucide-react";
 
 import { AddPublicRepo } from "@/components/dashboard/add-public-repo";
 import { RepoCard } from "@/components/dashboard/repo-card";
-import { ApiKeyBanner } from "@/components/api-key-banner";
+import { UsageBanner } from "@/components/usage-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRepos } from "@/hooks/use-repos";
 
@@ -40,7 +40,7 @@ export function RepoDashboard() {
       </div>
 
       <div className="mt-6 grid gap-4">
-        <ApiKeyBanner />
+        <UsageBanner />
         <AddPublicRepo />
       </div>
 

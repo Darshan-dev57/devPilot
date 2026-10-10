@@ -5,8 +5,9 @@ import java.util.Locale;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * Turns errors from OpenAI or Gemini into one short sentence a visitor can act on.
- * Provider response bodies are never passed through verbatim.
+ * Turns errors from the AI provider into one short sentence a visitor can act on.
+ * Provider response bodies are never passed through verbatim. The key belongs to the
+ * server owner, so key problems are worded for them, not for the visitor.
  */
 public final class AiErrors {
 
@@ -14,40 +15,71 @@ public final class AiErrors {
     }
 
     public static String describe(Throwable error, AiProvider provider) {
-        String name = provider == AiProvider.GEMINI ? "Gemini" : "OpenAI";
-        Integer status = null;
-        StringBuilder text = new StringBuilder();
-        for (Throwable t = error; t != null; t = t.getCause()) {
-            if (t instanceof RestClientResponseException rest && status == null) {
-                status = rest.getStatusCode().value();
-            }
-            if (status == null) {
-                status = statusFromSdk(t);
-            }
-            if (t.getMessage() != null) {
-                text.append(' ').append(t.getMessage());
-            }
-            if (t.getCause() == t) {
-                break;
-            }
-        }
-        String lower = text.toString().toLowerCase(Locale.ROOT);
+        String name = provider.label();
+        Integer status = status(error);
+        String lower = text(error);
 
+        if (provider == AiProvider.OLLAMA && (lower.contains("connection refused") || lower.contains("connect"))) {
+            return "Ollama is not running at the configured address. Start it with `ollama serve`.";
+        }
         if (eq(status, 401) || eq(status, 403) || lower.contains("invalid_api_key") || lower.contains("incorrect api key")
                 || lower.contains("api key not valid") || lower.contains("api_key_invalid") || lower.contains("permission_denied")) {
-            return "Your " + name + " API key was rejected. Check it in Settings.";
+            return "The server's " + name + " key was rejected. The site owner needs to check it.";
         }
-        if (eq(status, 429) || lower.contains("insufficient_quota") || lower.contains("rate limit")
-                || lower.contains("resource_exhausted") || lower.contains("quota")) {
-            return "Your " + name + " account hit its rate limit or has no credit left. Wait a minute or check billing.";
+        if (isRateLimit(error)) {
+            if (lower.contains("perday") || lower.contains("per day") || lower.contains("daily")) {
+                return "The free " + name + " quota for today is used up. Please try again tomorrow.";
+            }
+            return "The free " + name + " quota is busy right now. Wait a minute and try again.";
         }
-        if (eq(status, 404) || lower.contains("model_not_found") || lower.contains("does not exist")) {
-            return "The " + name + " model is not available for your key.";
+        if (eq(status, 404) || lower.contains("model_not_found") || lower.contains("does not exist")
+                || lower.contains("not found")) {
+            return "The configured " + name + " model is not available. The site owner needs to check the model name.";
         }
         if (lower.contains("timed out") || lower.contains("timeout") || lower.contains("connect")) {
             return name + " did not respond in time. Try again.";
         }
         return name + " returned an error" + (status != null ? " (HTTP " + status + ")" : "") + ". Try again.";
+    }
+
+    /** True for HTTP 429 or a provider's quota/rate-limit wording. */
+    public static boolean isRateLimit(Throwable error) {
+        String lower = text(error);
+        return eq(status(error), 429) || lower.contains("insufficient_quota") || lower.contains("rate limit")
+                || lower.contains("rate_limit") || lower.contains("resource_exhausted") || lower.contains("quota")
+                || lower.contains(" 429");
+    }
+
+    private static Integer status(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof RestClientResponseException rest) {
+                return rest.getStatusCode().value();
+            }
+            Integer sdk = statusFromSdk(t);
+            if (sdk != null) {
+                return sdk;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return null;
+    }
+
+    private static String text(Throwable error) {
+        StringBuilder text = new StringBuilder();
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t.getMessage() != null) {
+                text.append(' ').append(t.getMessage());
+            }
+            if (t instanceof RestClientResponseException rest) {
+                text.append(' ').append(rest.getResponseBodyAsString());
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return text.toString().toLowerCase(Locale.ROOT);
     }
 
     private static boolean eq(Integer status, int expected) {

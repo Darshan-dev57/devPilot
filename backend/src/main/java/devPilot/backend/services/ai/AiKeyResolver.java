@@ -1,42 +1,64 @@
 package devPilot.backend.services.ai;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import devPilot.backend.exceptions.BadRequestException;
+import devPilot.backend.exceptions.ServiceUnavailableException;
 
+/**
+ * The one AI key this server uses, set by the operator in an environment variable.
+ * Visitors never paste a key.
+ *
+ * <p>GEMINI_API_KEY is the default path (Google's Gemini API has a free tier).
+ * OPENAI_API_KEY works too. If both are set, app.ai.provider picks one.
+ */
 @Component
 public class AiKeyResolver {
 
-    public static final String MISSING_KEY_MESSAGE =
-            "Add your AI API key in Settings to use AI features";
+    public static final String NOT_CONFIGURED =
+            "This DevPilot server has no AI key configured yet. The site owner needs to set GEMINI_API_KEY (or OPENAI_API_KEY, or AI_PROVIDER=ollama).";
 
-    /**
-     * Resolves the provider for a request. The client states the provider explicitly in the
-     * X-AI-Provider header, which is authoritative: the provider decides which base URL,
-     * model and vector table to use, and getting it wrong sends a Gemini key to OpenAI.
-     *
-     * <p>The key-prefix fallback only applies to older clients that predate the header.
-     */
-    public UserAiKey requireKey(String apiKey, String providerHeader) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new BadRequestException(MISSING_KEY_MESSAGE);
-        }
-        if (providerHeader != null && !providerHeader.isBlank()) {
-            return new UserAiKey(AiProvider.parse(providerHeader), apiKey);
-        }
-        return new UserAiKey(inferFromKey(apiKey), apiKey);
+    private final String geminiKey;
+    private final String openaiKey;
+    private final String preferred;
+
+    public AiKeyResolver(
+            @Value("${app.ai.gemini.api-key:}") String geminiKey,
+            @Value("${app.ai.openai.api-key:}") String openaiKey,
+            @Value("${app.ai.provider:}") String preferred) {
+        this.geminiKey = geminiKey == null ? "" : geminiKey.trim();
+        this.openaiKey = openaiKey == null ? "" : openaiKey.trim();
+        this.preferred = preferred == null ? "" : preferred.trim();
     }
 
-    /**
-     * Best-effort provider guess for clients that do not send X-AI-Provider. Google issues
-     * Gemini keys under more than one prefix (AIza... and AQ...), so both are checked.
-     * Anything unrecognised is assumed to be OpenAI, which is the historical default.
-     */
-    private static AiProvider inferFromKey(String apiKey) {
-        if (apiKey.startsWith("AIza") || apiKey.startsWith("AQ.")) {
+    public UserAiKey requireKey() {
+        AiProvider provider = provider();
+        if (provider == AiProvider.OLLAMA) {
+            return new UserAiKey(provider, "ollama");
+        }
+        String key = provider == AiProvider.GEMINI ? geminiKey : openaiKey;
+        if (key.isEmpty()) {
+            throw new ServiceUnavailableException(NOT_CONFIGURED);
+        }
+        return new UserAiKey(provider, key);
+    }
+
+    /** The provider in use: the explicit setting, else whichever key is present (Gemini first). */
+    public AiProvider provider() {
+        if (!preferred.isEmpty()) {
+            return AiProvider.parse(preferred);
+        }
+        if (!geminiKey.isEmpty()) {
             return AiProvider.GEMINI;
         }
-        return AiProvider.OPENAI;
+        return openaiKey.isEmpty() ? AiProvider.GEMINI : AiProvider.OPENAI;
+    }
+
+    public boolean configured() {
+        if (provider() == AiProvider.OLLAMA) {
+            return true;
+        }
+        return !(provider() == AiProvider.GEMINI ? geminiKey : openaiKey).isEmpty();
     }
 
     public record UserAiKey(AiProvider provider, String apiKey) {

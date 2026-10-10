@@ -117,6 +117,7 @@ export function useStreamChat(sessionId: string | null) {
         setStreamText("");
       } finally {
         setStreaming(false);
+        void queryClient.invalidateQueries({ queryKey: queryKeys.usage });
       }
     },
     [sessionId, streaming, queryClient]

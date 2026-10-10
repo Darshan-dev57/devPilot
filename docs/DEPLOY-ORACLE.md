@@ -55,42 +55,29 @@ git clone https://github.com/Darshan-dev57/devPilot.git
 cd devPilot
 ```
 
-## 4. Configure (4 values)
+## 4. Configure (3 values)
 
 ```bash
 cp .env.example .env
-openssl rand -hex 32   # -> TOKEN_ENCRYPTOR_PASSWORD
-openssl rand -hex 8    # -> TOKEN_ENCRYPTOR_SALT
 ```
 
 Edit `.env`:
 - `DOMAIN=` — your hostname (`devpilot.example.com` or `devpilot.<IP>.nip.io`).
   Point your domain's **A record** at the VM IP first if using a real domain.
-- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` — register a **production** GitHub
-  OAuth App (github.com → Settings → Developer settings → OAuth Apps → New):
-  - Homepage URL: `https://<DOMAIN>`
-  - Authorization callback URL: `https://<DOMAIN>/login/oauth2/code/github`
-  - (Keep a separate local OAuth App with `http://localhost:8080/...` for dev.)
 - `POSTGRES_PASSWORD=` — any strong password.
-
-No OpenAI key needed on the server: every user adds their own in
-Settings → OpenAI API key (stored encrypted, billed to them).
-
-### Users pick OpenAI or Gemini themselves
-
-No server AI configuration needed: every user chooses a provider in
-Settings → AI provider key and pastes their own key (stored encrypted, billed
-to them). OpenAI and Gemini each keep a separate vector table, and switching
-provider resets that user's repos to unindexed for re-indexing.
+- `GEMINI_API_KEY=` — one free key from https://aistudio.google.com/apikey.
+  Visitors never paste a key; daily limits protect the free quota (README,
+  "Free tier and limits").
+- Optional: `GITHUB_TOKEN=` — a classic token with no scopes, to raise GitHub's
+  limit from 60 to 5,000 calls an hour.
 
 Notes:
-- Gemini model names retire fast — if chat fails with "model ... is no longer
-  available", list current ones with:
-  `curl https://generativelanguage.googleapis.com/v1beta/openai/models -H "Authorization: Bearer KEY"`
-  and update `app.ai.gemini.chat-model` (default `gemini-3.8-flash`).
-- Changing embedding model/dimensions later requires a fresh vector table
-  (`DROP TABLE vector_store_openai;` / `vector_store_gemini;` — recreated
-  automatically).
+- Gemini model names retire fast. If chat says the model is not available, list
+  current ones with
+  `curl https://generativelanguage.googleapis.com/v1beta/models -H "x-goog-api-key: KEY"`
+  and set `GEMINI_CHAT_MODEL` (default `gemini-3.5-flash-lite`).
+- Changing the embedding model or dimensions later needs a fresh vector table
+  (`DROP TABLE vector_store_gemini;`, recreated automatically), then re-index.
 
 ## 5. Launch
 
@@ -125,8 +112,7 @@ docker run --rm -v devpilot_devpilot_pg_data:/data -v $PWD:/backup \
 |---|---|
 | Browser can't reach the site | VCN security list or instance iptables missing 80/443 |
 | TLS error / cert not issued | DNS A record wrong, or port 80 blocked during first visit |
-| Login lands on `?error=oauth_failed` | Callback URL mismatch in the GitHub OAuth App, or wrong client id/secret |
-| Login lands on `?error=session` (split hosting) | Session cookie blocked cross-site: needs `SameSite=None; Secure` — set `SERVER_SERVLET_SESSION_COOKIE_SAME_SITE=none` + `..._SECURE=true` on the backend |
-| `401` right after GitHub approve | `TOKEN_ENCRYPTOR_*` changed after users were created — keep it stable |
-| Index/chat says "Add your OpenAI API key" | Expected: that user hasn't saved a key in Settings yet |
+| "This server has no AI key configured yet" | `GEMINI_API_KEY` is missing from `.env` |
+| "The free Gemini quota is busy right now" | Google's per-minute free limit; indexing waits and retries on its own |
+| "You've used today's free questions" | The per-visitor daily limit; raise `LIMIT_QUESTIONS_PER_VISITOR` if you like |
 | OOM / slowness | Check `docker stats`; 2 OCPU/12 GB is enough — look for runaway indexing first |

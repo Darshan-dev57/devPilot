@@ -1,5 +1,6 @@
 package devPilot.backend.services.ai;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -17,11 +18,13 @@ import devPilot.backend.entity.MessageRole;
 import devPilot.backend.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
 import reactor.core.Disposable;
+import reactor.util.retry.Retry;
+import org.springframework.beans.factory.annotation.Value;
 import tools.jackson.databind.json.JsonMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Generation step: call OpenAI via Spring AI and stream tokens to the browser over SSE.
+ * Generation step: call the configured chat model and stream tokens to the browser over SSE.
  */
 @Component
 @RequiredArgsConstructor
@@ -31,6 +34,9 @@ public class ChatStreamHandler {
     private final ChatMessageRepository chatMessageRepository;
     private final CitationMapper citationMapper;
     private final JsonMapper jsonMapper;
+
+    @Value("${app.ai.retry-base-delay-ms:2000}")
+    private long rateLimitBackoffMs = 2000;
 
     /**
      * Stream using a caller-supplied model, e.g. a per-request BYOK model.
@@ -60,6 +66,11 @@ public class ChatStreamHandler {
                     .user(userPrompt)
                     .stream()
                     .content()
+                    // A free tier answers 429 when too many requests land in one minute. Wait
+                    // and retry twice, but only before any text went out, so nothing repeats.
+                    .retryWhen(Retry.backoff(2, Duration.ofMillis(rateLimitBackoffMs))
+                            .filter(err -> fullReply.isEmpty() && AiErrors.isRateLimit(err))
+                            .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                     .subscribe(
                             token -> appendToken(emitter, fullReply, token),
                             err -> {

@@ -24,8 +24,8 @@ class BackendApplicationTests {
 
 	@Test
 	void contextLoadsWithoutAnyServerAiCredentials() {
-		// Reaching this assertion means every singleton was constructible. The BYOK
-		// services specifically must not require a server-side OpenAI or Gemini key.
+		// Reaching this assertion means every singleton was constructible. A missing
+		// GEMINI_API_KEY must only fail the AI calls, never the startup.
 		assertThat(AiModelFactory.class).isNotNull();
 		assertThat(ChatStreamHandler.class).isNotNull();
 		assertThat(CodeContextRetriever.class).isNotNull();

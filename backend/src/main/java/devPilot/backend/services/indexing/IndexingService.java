@@ -28,6 +28,7 @@ import devPilot.backend.services.ai.AiKeyResolver;
 import devPilot.backend.services.ai.AiKeyResolver.UserAiKey;
 import devPilot.backend.services.ai.AiModelFactory;
 import devPilot.backend.services.ai.RagSettings;
+import devPilot.backend.services.ai.RetryingEmbeddingModel;
 import devPilot.backend.services.github.GitHubException;
 import devPilot.backend.services.github.GithubApiClient;
 import devPilot.backend.services.github.GithubApiClient.FileChange;
@@ -67,12 +68,12 @@ public class IndexingService {
     @Value("${app.indexing.max-file-bytes:102400}")
     private long maxFileBytes;
 
-    public Repository startIndexing(UUID repoId, String apiKey, String provider) {
-        UserAiKey key = aiKeyResolver.requireKey(apiKey, provider);
+    @Value("${app.limits.max-files:800}")
+    private int maxFiles;
+
+    public Repository startIndexing(UUID repoId) {
+        UserAiKey key = aiKeyResolver.requireKey();
         Repository repo = require(repoId);
-        if (repo.getIndexStatus() == IndexStatus.INDEXING) {
-            throw new BadRequestException("Repository is already being indexed");
-        }
         if (repo.getIndexStatus() == IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is paused. Resume it to continue");
         }
@@ -88,13 +89,13 @@ public class IndexingService {
     }
 
     @Async("indexingExecutor")
-    public void indexAsync(UUID repoId, String apiKey, String provider) {
-        run(repoId, apiKey, provider, false);
+    public void indexAsync(UUID repoId) {
+        run(repoId, false);
     }
 
     @Async("indexingExecutor")
-    public void resumeAsync(UUID repoId, String apiKey, String provider) {
-        run(repoId, apiKey, provider, true);
+    public void resumeAsync(UUID repoId) {
+        run(repoId, true);
     }
 
     public Repository pauseIndexing(UUID repoId) {
@@ -106,8 +107,8 @@ public class IndexingService {
         return repo;
     }
 
-    public Repository resumeIndexing(UUID repoId, String apiKey, String provider) {
-        UserAiKey key = aiKeyResolver.requireKey(apiKey, provider);
+    public Repository resumeIndexing(UUID repoId) {
+        UserAiKey key = aiKeyResolver.requireKey();
         Repository repo = require(repoId);
         if (repo.getIndexStatus() != IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is not paused");
@@ -122,16 +123,17 @@ public class IndexingService {
     }
 
     /** Runs one index job synchronously. Public so tests can drive it without @Async. */
-    public void run(UUID repoId, String apiKey, String provider, boolean resume) {
-        UserAiKey key = aiKeyResolver.requireKey(apiKey, provider);
+    public void run(UUID repoId, boolean resume) {
+        UserAiKey key = aiKeyResolver.requireKey();
         long started = System.nanoTime();
+        RetryingEmbeddingModel.WAIT_LISTENER.set(message -> phase(repoId, message));
         try {
             String mode = index(repoId, key, resume);
             if (mode != null) {
                 long millis = (System.nanoTime() - started) / 1_000_000;
                 markReady(repoId, key, mode, millis);
             }
-        } catch (GitHubException ex) {
+        } catch (GitHubException | BadRequestException ex) {
             log.warn("Indexing {} failed: {}", repoId, ex.getMessage());
             markFailed(repoId, ex.getMessage());
         } catch (Exception ex) {
@@ -145,6 +147,7 @@ public class IndexingService {
                 markFailed(repoId, AiErrors.describe(ex, key.provider()));
             }
         } finally {
+            RetryingEmbeddingModel.WAIT_LISTENER.remove();
             pauseFlags.remove(repoId);
         }
     }
@@ -201,6 +204,10 @@ public class IndexingService {
         List<SourceFile> files = gitHubApiClient.downloadSnapshot(
                 repo.getOwner(), repo.getName(), head, this::eligible, maxFileBytes);
         files = files.stream().sorted((a, b) -> a.path().compareTo(b.path())).toList();
+        if (maxFiles > 0 && files.size() > maxFiles) {
+            throw new BadRequestException("This repo has " + files.size() + " code files. The free server indexes up to "
+                    + maxFiles + ", so try a smaller repo.");
+        }
         return embedFiles(repoId, store, files, Math.min(startFrom, files.size()));
     }
 
@@ -262,7 +269,10 @@ public class IndexingService {
             if (batch.size() >= VECTOR_BATCH_SIZE) {
                 flush(store, batch);
                 int done = processed;
-                update(repoId, r -> r.setFilesProcessed(done));
+                update(repoId, r -> {
+                    r.setFilesProcessed(done);
+                    r.setIndexPhase("Embedding code");
+                });
             }
         }
         flush(store, batch);

@@ -8,7 +8,7 @@ import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { IndexingState } from "@/components/chat/indexing-state";
-import { ApiKeyBanner } from "@/components/api-key-banner";
+import { UsageBanner } from "@/components/usage-banner";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -124,7 +124,7 @@ export function ChatView({ repoId }: { repoId: string }) {
           </div>
 
           <div className="mx-auto w-full max-w-3xl px-4 pt-4 empty:hidden">
-            <ApiKeyBanner />
+            <UsageBanner kind="questions" />
           </div>
 
           {!ready ? (

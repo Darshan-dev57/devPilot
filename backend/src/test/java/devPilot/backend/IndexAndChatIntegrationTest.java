@@ -38,7 +38,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * End to end against a real Postgres + pgvector (Testcontainers) and a fake GitHub over
- * real HTTP: add a repo, full index, chat over SSE, then push commits and check that only
+ * real HTTP: add a repo, full index, chat over SSE, hit the daily limit, then push commits and check that only
  * the changed files are re-embedded. The AI models are local fakes (no key needed).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -92,6 +92,11 @@ class IndexAndChatIntegrationTest {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("app.github.api-base-url", GITHUB::baseUrl);
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+        registry.add("app.ai.provider", () -> "openai");
+        registry.add("app.ai.openai.api-key", () -> KEY);
+        registry.add("app.ai.retry-base-delay-ms", () -> "10");
+        registry.add("app.limits.questions-per-visitor", () -> "2");
+        registry.add("app.limits.indexes-per-visitor", () -> "0");
     }
 
     @LocalServerPort
@@ -142,9 +147,6 @@ class IndexAndChatIntegrationTest {
         assertThat(added.statusCode()).isEqualTo(200);
         repoId = json.readTree(added.body()).get("id").asString();
 
-        assertThat(post("/api/repos/" + repoId + "/index", "", null).statusCode())
-                .as("indexing without a key is refused").isEqualTo(400);
-
         JsonNode status = indexAndWait();
         assertThat(status.get("indexStatus").asString()).isEqualTo("READY");
         assertThat(status.get("lastIndexMode").asString()).isEqualTo("FULL");
@@ -180,19 +182,23 @@ class IndexAndChatIntegrationTest {
 
     @Test
     @Order(4)
-    void chatWithTheOtherProviderGetsAClearError() throws Exception {
+    void theDailyQuestionLimitIsAFriendly429() throws Exception {
         HttpResponse<String> session = post("/api/chat/sessions", "{\"repositoryId\":\"" + repoId + "\"}", null);
         String sessionId = json.readTree(session.body()).get("id").asString();
-        HttpRequest request = HttpRequest.newBuilder(uri("/api/chat/sessions/" + sessionId + "/messages"))
-                .header("Content-Type", "application/json")
-                .header("X-Visitor-Id", VISITOR_A)
-                .header("X-Api-Key", "AIza-gemini")
-                .header("X-AI-Provider", "gemini")
-                .POST(HttpRequest.BodyPublishers.ofString("{\"content\":\"hi\"}"))
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        assertThat(response.statusCode()).isEqualTo(400);
-        assertThat(response.body()).contains("indexed with OpenAI");
+        String path = "/api/chat/sessions/" + sessionId + "/messages";
+
+        assertThat(post(path, "{\"content\":\"second question\"}", null).statusCode()).isEqualTo(200);
+        HttpResponse<String> third = post(path, "{\"content\":\"third question\"}", null);
+        assertThat(third.statusCode()).isEqualTo(429);
+        assertThat(json.readTree(third.body()).get("message").asString())
+                .isEqualTo("You've used today's 2 free questions. Come back tomorrow.");
+        // The refused question is not stored in the chat history.
+        assertThat(json.readTree(get("/api/chat/sessions/" + sessionId, VISITOR_A).body()).size()).isEqualTo(2);
+
+        JsonNode usage = json.readTree(get("/api/usage", VISITOR_A).body());
+        assertThat(usage.get("questionsLeft").asInt()).isZero();
+        assertThat(usage.get("provider").asString()).isEqualTo("OpenAI");
+        assertThat(json.readTree(get("/api/usage", VISITOR_B).body()).get("questionsLeft").asInt()).isEqualTo(2);
     }
 
     @Test
@@ -221,18 +227,18 @@ class IndexAndChatIntegrationTest {
 
     @Test
     @Order(6)
-    void aRejectedKeyIsRefusedUpFrontAndTheExistingIndexSurvives() throws Exception {
+    void aRejectedServerKeyIsRefusedUpFrontAndTheExistingIndexSurvives() throws Exception {
         int before = countVectors();
         GITHUB.commit(Map.of("src/A.java", "class A {}\n"));
-        HttpRequest request = HttpRequest.newBuilder(uri("/api/repos/" + repoId + "/index"))
-                .header("X-Visitor-Id", VISITOR_A)
-                .header("X-Api-Key", "bad-key").header("X-AI-Provider", "openai")
-                .POST(HttpRequest.BodyPublishers.noBody()).build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-
-        assertThat(response.statusCode()).isEqualTo(400);
-        assertThat(json.readTree(response.body()).get("message").asString())
-                .isEqualTo("Your OpenAI API key was rejected. Check it in Settings.");
+        models.rejectKey.set(true);
+        try {
+            HttpResponse<String> response = post("/api/repos/" + repoId + "/index", "", null);
+            assertThat(response.statusCode()).isEqualTo(503);
+            assertThat(json.readTree(response.body()).get("message").asString())
+                    .isEqualTo("The server's OpenAI key was rejected. The site owner needs to check it.");
+        } finally {
+            models.rejectKey.set(false);
+        }
         assertThat(countVectors()).isEqualTo(before);
         assertThat(waitWhileIndexing().get("indexStatus").asString()).isEqualTo("READY");
     }
@@ -322,9 +328,6 @@ class IndexAndChatIntegrationTest {
                 .header("Content-Type", "application/json")
                 .header("X-Visitor-Id", visitor)
                 .POST(HttpRequest.BodyPublishers.ofString(body));
-        if (apiKey != null) {
-            request.header("X-Api-Key", apiKey).header("X-AI-Provider", "openai");
-        }
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 }

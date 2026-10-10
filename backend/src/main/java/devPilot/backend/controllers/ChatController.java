@@ -53,9 +53,7 @@ public class ChatController {
     public SseEmitter sendMessage(
             @PathVariable UUID id,
             @Valid @RequestBody ChatMessageRequest request,
-            @RequestHeader(Visitors.HEADER) String visitor,
-            @RequestHeader("X-Api-Key") String apiKey,
-            @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
-        return chatService.streamReply(id, Visitors.parse(visitor), request.content(), apiKey, provider);
+            @RequestHeader(Visitors.HEADER) String visitor) {
+        return chatService.streamReply(id, Visitors.parse(visitor), request.content());
     }
 }

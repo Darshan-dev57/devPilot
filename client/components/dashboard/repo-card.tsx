@@ -81,7 +81,7 @@ export function RepoCard({ repo }: { repo: Repository }) {
             Paused at {repo.filesProcessed} of {repo.filesTotal} files. Resume picks up where it stopped.
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground">Not indexed yet. Indexing reads the code once with your key.</p>
+          <p className="text-xs text-muted-foreground">Not indexed yet. Indexing reads the code once, then you can ask anything.</p>
         )}
       </div>
 

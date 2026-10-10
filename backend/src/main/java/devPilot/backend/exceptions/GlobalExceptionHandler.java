@@ -11,7 +11,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.Visitors;
 import devPilot.backend.services.github.GitHubException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,6 +45,16 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, message);
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    ResponseEntity<Map<String, Object>> handleTooMany(TooManyRequestsException ex) {
+        return error(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+    }
+
+    @ExceptionHandler(ServiceUnavailableException.class)
+    ResponseEntity<Map<String, Object>> handleUnavailable(ServiceUnavailableException ex) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
     @ExceptionHandler(GitHubException.class)
     ResponseEntity<Map<String, Object>> handleGitHub(GitHubException ex) {
         HttpStatus status = switch (ex.getKind()) {
@@ -58,8 +68,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     ResponseEntity<Map<String, Object>> handleMissingHeader(MissingRequestHeaderException ex) {
-        if ("X-Api-Key".equalsIgnoreCase(ex.getHeaderName())) {
-            return error(HttpStatus.BAD_REQUEST, AiKeyResolver.MISSING_KEY_MESSAGE);
+        if (Visitors.HEADER.equalsIgnoreCase(ex.getHeaderName())) {
+            return error(HttpStatus.BAD_REQUEST, "Missing visitor id. Reload the page and try again.");
         }
         return error(HttpStatus.BAD_REQUEST, "Missing header " + ex.getHeaderName());
     }

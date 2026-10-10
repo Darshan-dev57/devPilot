@@ -1,6 +1,5 @@
 export type IndexStatus = "PENDING" | "INDEXING" | "PAUSED" | "READY" | "FAILED";
 
-export type AiProvider = "openai" | "gemini";
 
 export type Repository = {
   id: string;
@@ -20,7 +19,7 @@ export type Repository = {
   filesProcessed: number;
   errorMessage: string | null;
   indexedSha: string | null;
-  embeddingProvider: "OPENAI" | "GEMINI" | null;
+  embeddingProvider: "OPENAI" | "GEMINI" | "OLLAMA" | null;
   lastIndexMode: "FULL" | "INCREMENTAL" | "UP_TO_DATE" | null;
   lastIndexDurationMs: number | null;
   indexPhase: string | null;
@@ -38,6 +37,17 @@ export type IndexStatusResponse = {
   indexedSha: string | null;
   lastIndexMode: Repository["lastIndexMode"];
   lastIndexDurationMs: number | null;
+};
+
+/** Today's free allowance for this browser. A value of -1 means that limit is off. */
+export type Usage = {
+  provider: string;
+  model: string;
+  configured: boolean;
+  questionsLeft: number;
+  questionsPerDay: number;
+  indexesLeft: number;
+  indexesPerDay: number;
 };
 
 export type ChatSession = {
@@ -62,32 +72,6 @@ export type ChatMessage = {
   createdAt: string;
 };
 
-const AI_KEY_STORAGE_KEY = "devpilot_ai_key";
-const AI_PROVIDER_STORAGE_KEY = "devpilot_ai_provider";
-
-export function getStoredApiKey(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(AI_KEY_STORAGE_KEY) ?? "";
-}
-
-export function getStoredProvider(): AiProvider {
-  if (typeof window === "undefined") return "openai";
-  const stored = localStorage.getItem(AI_PROVIDER_STORAGE_KEY);
-  return stored === "gemini" ? "gemini" : "openai";
-}
-
-export function saveApiKeyToStorage(provider: AiProvider, key: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(AI_KEY_STORAGE_KEY, key);
-  localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider);
-}
-
-export function clearApiKeyFromStorage() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(AI_KEY_STORAGE_KEY);
-  localStorage.removeItem(AI_PROVIDER_STORAGE_KEY);
-}
-
 const VISITOR_STORAGE_KEY = "devpilot_visitor_id";
 
 function randomUuid(): string {
@@ -106,6 +90,9 @@ function randomUuid(): string {
  */
 export function getVisitorId(): string {
   if (typeof window === "undefined") return "";
+  // Older builds kept a pasted AI key here. Keys now live only on the server.
+  localStorage.removeItem("devpilot_ai_key");
+  localStorage.removeItem("devpilot_ai_provider");
   let id = localStorage.getItem(VISITOR_STORAGE_KEY);
   if (!id) {
     id = randomUuid();
@@ -141,19 +128,11 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const apiKey = getStoredApiKey();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Visitor-Id": getVisitorId(),
     ...(init?.headers as Record<string, string> | undefined),
   };
-  if (apiKey) {
-    headers["X-Api-Key"] = apiKey;
-    // The backend cannot reliably tell a Gemini key from an OpenAI one: Google
-    // issues Gemini keys under several prefixes. The chosen provider is sent
-    // explicitly so routing does not depend on guessing the key format.
-    headers["X-AI-Provider"] = getStoredProvider();
-  }
 
   const res = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
@@ -172,6 +151,7 @@ export async function apiFetch<T>(
 }
 
 export const api = {
+  usage: () => apiFetch<Usage>("/api/usage"),
   listRepos: () => apiFetch<Repository[]>("/api/repos"),
   addPublicRepo: (owner: string, name: string) =>
     apiFetch<Repository>("/api/repos/by-url", {

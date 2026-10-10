@@ -3,6 +3,7 @@ package devPilot.backend.support;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -34,6 +35,9 @@ public class FakeAiModelFactory extends AiModelFactory {
 
     public final AtomicInteger embeddedTexts = new AtomicInteger();
 
+    /** When set, new embedding calls fail the way a revoked server key does. */
+    public final AtomicBoolean rejectKey = new AtomicBoolean();
+
     public FakeAiModelFactory(JdbcTemplate jdbcTemplate, RestClient.Builder builder) {
         super(jdbcTemplate, builder);
     }
@@ -45,10 +49,7 @@ public class FakeAiModelFactory extends AiModelFactory {
 
     @Override
     protected EmbeddingModel embeddingModel(AiProvider provider, String apiKey) {
-        if ("bad-key".equals(apiKey)) {
-            return new HashingEmbeddingModel(true);
-        }
-        return new HashingEmbeddingModel(false);
+        return new HashingEmbeddingModel(rejectKey.get());
     }
 
     @Override

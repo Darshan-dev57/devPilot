@@ -1,4 +1,5 @@
 export const queryKeys = {
+  usage: ["usage"] as const,
   repos: {
     all: ["repos"] as const,
     list: () => [...queryKeys.repos.all, "list"] as const,
