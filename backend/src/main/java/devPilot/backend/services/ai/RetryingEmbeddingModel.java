@@ -57,7 +57,7 @@ public class RetryingEmbeddingModel implements EmbeddingModel {
             try {
                 return delegate.call(request);
             } catch (RuntimeException ex) {
-                if (attempt >= maxAttempts || !isRateLimit(ex)) {
+                if (attempt >= maxAttempts || !isRateLimit(ex) || ex instanceof DailyQuotaException) {
                     throw ex;
                 }
                 // Google's daily cap says so in its quota id ("...PerDay...") and asks for a

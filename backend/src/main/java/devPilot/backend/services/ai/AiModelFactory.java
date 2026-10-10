@@ -13,6 +13,7 @@ import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.openai.http.okhttp.SpringAiOpenAiHttpClient;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -85,13 +86,23 @@ public class AiModelFactory {
     private final Set<AiProvider> schemaReady = ConcurrentHashMap.newKeySet();
     private final HttpClient httpClient = SpringAiOpenAiHttpClient.builder().build();
 
+    private GeminiKeyPool geminiKeys;
+
     public AiModelFactory(JdbcTemplate jdbcTemplate, RestClient.Builder restClientBuilder) {
         this.jdbcTemplate = jdbcTemplate;
         this.restClientBuilder = restClientBuilder;
     }
 
+    /** The server's Gemini keys, when GEMINI_API_KEY lists more than one. */
+    @Autowired(required = false)
+    public void setGeminiKeys(GeminiKeyPool geminiKeys) {
+        this.geminiKeys = geminiKeys;
+    }
+
     public ChatModel chatModel(AiProvider provider, String apiKey) {
-        return chatModels.computeIfAbsent(provider.name(), k -> buildChatModel(provider, apiKey));
+        return chatModels.computeIfAbsent(provider.name(), k -> pooled(provider)
+                ? new KeyFallbackChatModel(geminiKeys, key -> buildChatModel(provider, key))
+                : buildChatModel(provider, apiKey));
     }
 
     /** Chat model for a key: cached for the server's key, built fresh for a visitor's. */
@@ -127,12 +138,15 @@ public class AiModelFactory {
     }
 
     public VectorStore vectorStore(AiProvider provider, String apiKey) {
-        return vectorStores.computeIfAbsent(provider.name(), k -> buildVectorStore(provider, apiKey));
+        return vectorStores.computeIfAbsent(provider.name(),
+                k -> buildVectorStore(provider, serverEmbeddingModel(provider, apiKey)));
     }
 
     /** Vector store for a key: cached for the server's key, built fresh for a visitor's. */
     public VectorStore vectorStore(AiKeyResolver.UserAiKey key) {
-        return key.visitor() ? buildVectorStore(key.provider(), key.apiKey()) : vectorStore(key.provider(), key.apiKey());
+        return key.visitor()
+                ? buildVectorStore(key.provider(), embeddingModel(key.provider(), key.apiKey()))
+                : vectorStore(key.provider(), key.apiKey());
     }
 
     /**
@@ -141,7 +155,10 @@ public class AiModelFactory {
      */
     public void verifyKey(AiKeyResolver.UserAiKey key) {
         try {
-            embeddingModel(key.provider(), key.apiKey()).embed("ping");
+            EmbeddingModel model = key.visitor()
+                    ? embeddingModel(key.provider(), key.apiKey())
+                    : serverEmbeddingModel(key.provider(), key.apiKey());
+            model.embed("ping");
         } catch (RuntimeException ex) {
             throw new ServiceUnavailableException(AiErrors.describe(ex, key.provider(), key.visitor()));
         }
@@ -175,12 +192,33 @@ public class AiModelFactory {
     /** Embedding model for the provider. Protected so tests can swap in a fake. */
     protected EmbeddingModel embeddingModel(AiProvider provider, String apiKey) {
         EmbeddingModel model = switch (provider) {
-            case GEMINI -> new GeminiEmbeddingModel(apiKey, geminiBaseUrl, geminiKeyHeader, geminiEmbeddingModel,
-                    geminiEmbeddingDimensions, restClientBuilder.clone().build());
+            case GEMINI -> geminiEmbedding(apiKey);
             case OPENAI -> openAiEmbedding(openaiBaseUrl, apiKey, openaiEmbeddingModel, openaiEmbeddingDimensions);
             case OPENCODE, ANTHROPIC -> throw new IllegalStateException(provider.label() + " has no embeddings");
         };
         return new RetryingEmbeddingModel(model, retryBaseDelayMs, 8);
+    }
+
+    private EmbeddingModel geminiEmbedding(String apiKey) {
+        return new GeminiEmbeddingModel(apiKey, geminiBaseUrl, geminiKeyHeader, geminiEmbeddingModel,
+                geminiEmbeddingDimensions, restClientBuilder.clone().build());
+    }
+
+    /**
+     * Embedding model for the server's own key. With several Gemini keys it moves to the
+     * next key when one is used up; the per-minute wait still applies once all are busy.
+     */
+    protected EmbeddingModel serverEmbeddingModel(AiProvider provider, String apiKey) {
+        if (!pooled(provider)) {
+            return embeddingModel(provider, apiKey);
+        }
+        return new RetryingEmbeddingModel(new KeyFallbackEmbeddingModel(geminiKeys, this::geminiEmbedding),
+                retryBaseDelayMs, 8);
+    }
+
+    /** True when the server has more than one Gemini key to fall back on. */
+    private boolean pooled(AiProvider provider) {
+        return provider == AiProvider.GEMINI && geminiKeys != null && geminiKeys.size() > 1;
     }
 
     /** Chat model for the provider. Protected so tests can swap in a fake. */
@@ -217,10 +255,10 @@ public class AiModelFactory {
                 .build();
     }
 
-    private VectorStore buildVectorStore(AiProvider provider, String apiKey) {
+    private VectorStore buildVectorStore(AiProvider provider, EmbeddingModel embeddingModel) {
         // The table is created once; stores built later for visitor keys skip the DDL.
         boolean firstForProvider = schemaReady.add(provider);
-        PgVectorStore store = PgVectorStore.builder(jdbcTemplate, embeddingModel(provider, apiKey))
+        PgVectorStore store = PgVectorStore.builder(jdbcTemplate, embeddingModel)
                 .schemaName("public")
                 .vectorTableName(provider.tableName())
                 .initializeSchema(firstForProvider)
