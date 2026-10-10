@@ -71,12 +71,20 @@ DevPilot only indexes public repositories, and private repos are refused even if
 
 ### Use your own key (optional)
 
-When a visitor hits the daily limit, or any time, the "Use your own key" button lets them paste:
+When a visitor hits the daily limit, or any time, the "Use your own key" button lets them pick who answers and paste that provider's key. The model field comes prefilled and can be changed.
 
-- a **Gemini API key**: used for both indexing and answers, with no daily limit.
-- an **OpenCode Zen API key**: used for answers only (Zen has no embeddings endpoint, so search still uses Gemini). The default model is `deepseek-v4.1-flash` on Zen's OpenAI-compatible `https://opencode.ai/zen/v1/chat/completions`, and the visitor can type another. Zen's free models do not work here: called from a server, Zen answers `403 FreeTierError` "OpenCode's free tier can only be used from within OpenCode", so a paid model is needed. DevPilot shows that as a plain message.
+| Provider | Default model | API used | Indexing |
+| --- | --- | --- | --- |
+| Gemini | `gemini-3.5-flash-lite` | Google Generative Language API | the same key, no daily limit |
+| OpenAI | `gpt-6-luna` | Chat Completions, streaming | Gemini (see below) |
+| Claude | `claude-sonnet-5-5` | Anthropic Messages API, streaming | Gemini (see below) |
+| OpenCode Zen | `deepseek-v4.1-flash` | `https://opencode.ai/zen/v1/chat/completions` | Gemini (see below) |
 
-The keys stay in the visitor's browser (localStorage) and travel as `X-Gemini-Key` / `X-OpenCode-Key` headers on their own requests. The server builds a model for that request only. It never stores the key, never caches the model, and never logs the key; a test checks that no key reaches the database. The OpenCode path is tested against a local fake of Zen's API, not the live service.
+Questions on a visitor's own key skip the daily question limit. Search vectors always come from Gemini, so a repo indexed once stays searchable for everyone: with an OpenAI, Claude or OpenCode key, indexing uses the visitor's optional Gemini key if they add one, otherwise the free server key (and counts toward the daily index limit). The panel says so.
+
+OpenCode Zen's free models do not work here: called from a server, Zen answers `403 FreeTierError` "OpenCode's free tier can only be used from within OpenCode", so a paid model is needed. Bad keys, an empty balance, a wrong model name and the Zen free-tier refusal each come back as one plain sentence.
+
+The keys stay in the visitor's browser (localStorage) and travel as headers on their own requests only (`X-Chat-Provider`, `X-Chat-Key`, `X-Chat-Model`, and `X-Gemini-Key` for a Gemini key). The server builds a model for that request and drops it. It never stores or logs the key; a test checks that no key reaches the database.
 
 The server itself can also run on OpenAI instead of Gemini (`AI_PROVIDER=openai`, `OPENAI_API_KEY`). Each provider keeps its own vector table because embedding sizes differ.
 
@@ -91,7 +99,7 @@ The server itself can also run on OpenAI instead of Gemini (`AI_PROVIDER=openai`
 flowchart LR
   B[Browser<br/>Next.js] -- REST + SSE<br/>X-Visitor-Id --> API[Spring Boot API]
   API -- one zip per commit,<br/>compare for changes --> GH[GitHub API]
-  API -- embeddings + chat<br/>server key or visitor key --> AI[Gemini / OpenAI / OpenCode Zen]
+  API -- embeddings + chat<br/>server key or visitor key --> AI[Gemini / OpenAI / Claude / OpenCode Zen]
   API -- chunks + vectors,<br/>repos, chats, usage --> PG[(Postgres + pgvector)]
 ```
 
@@ -114,7 +122,7 @@ flowchart LR
 | GET | `/api/chat/sessions/{id}` | Chat history |
 | POST | `/api/chat/sessions/{id}/messages` | Ask; answer streams as SSE (`token`, `assistant_message`, `done`, `error`) |
 
-Every call carries `X-Visitor-Id`, the anonymous browser id. It is not a login. Calls may also carry `X-Gemini-Key`, `X-OpenCode-Key` and `X-OpenCode-Model` when the visitor chose to use their own key.
+Every call carries `X-Visitor-Id`, the anonymous browser id. It is not a login. Calls may also carry `X-Chat-Provider`, `X-Chat-Key`, `X-Chat-Model` and `X-Gemini-Key` when the visitor chose to use their own key.
 
 ## Tests
 
