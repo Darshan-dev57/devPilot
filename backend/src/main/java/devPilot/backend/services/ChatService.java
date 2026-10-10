@@ -19,7 +19,9 @@ import devPilot.backend.exceptions.BadRequestException;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.ChatMessageRepository;
 import devPilot.backend.repository.ChatSessionRepository;
+import devPilot.backend.services.ai.AiErrors;
 import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.ai.RetrievedContext;
 import devPilot.backend.services.ai.AiModelFactory;
 import devPilot.backend.services.ai.ChatPromptBuilder;
 import devPilot.backend.services.ai.ChatStreamHandler;
@@ -91,26 +93,49 @@ public class ChatService {
             throw new BadRequestException("Repository is not ready for chat");
         }
 
+        var userKey = aiKeyResolver.requireKey(apiKey, provider);
+        // Vectors from one provider's embedding model cannot be searched with another's.
+        if (repo.getEmbeddingProvider() != null && !repo.getEmbeddingProvider().equals(userKey.provider().name())) {
+            throw new BadRequestException("This repo was indexed with " + label(repo.getEmbeddingProvider())
+                    + ". Switch to " + label(repo.getEmbeddingProvider()) + " in Settings, or re-index it with your "
+                    + label(userKey.provider().name()) + " key.");
+        }
+
+        List<ChatMessage> history = recentHistory(session.getId());
         ChatMessage userMessage = chatMessageRepository.save(ChatMessage.builder()
                 .sessionId(session.getId())
                 .role(MessageRole.USER)
                 .content(userContent)
                 .build());
 
-        var userKey = aiKeyResolver.requireKey(apiKey, provider);
-        var userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
-        var retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
+        RetrievedContext retrievedContext;
+        try {
+            var userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
+            retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
+        } catch (RuntimeException ex) {
+            throw new BadRequestException(AiErrors.describe(ex, userKey.provider()));
+        }
 
         String systemPrompt = chatPromptBuilder.systemPrompt(repo.getFullName());
-        String userPrompt = chatPromptBuilder.userPrompt(retrievedContext.contextText(), userContent);
+        String userPrompt = chatPromptBuilder.userPrompt(retrievedContext.contextText(), history, userContent);
 
         return chatStreamHandler.stream(
                 aiModelFactory.chatModel(userKey.provider(), userKey.apiKey()),
+                userKey.provider(),
                 session.getId(),
                 toMessageResponse(userMessage),
                 retrievedContext.citations(),
                 systemPrompt,
                 userPrompt);
+    }
+
+    private List<ChatMessage> recentHistory(UUID sessionId) {
+        List<ChatMessage> all = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
+        return all.subList(Math.max(0, all.size() - ChatPromptBuilder.HISTORY_MESSAGES), all.size());
+    }
+
+    private static String label(String provider) {
+        return "GEMINI".equals(provider) ? "Gemini" : "OpenAI";
     }
 
     private ChatSessionResponse toSessionResponse(ChatSession session) {

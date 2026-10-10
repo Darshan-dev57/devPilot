@@ -2,47 +2,65 @@ package devPilot.backend.services.indexing;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
-import org.springframework.stereotype.Service;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
 
 import devPilot.backend.entity.IndexStatus;
 import devPilot.backend.entity.Repository;
 import devPilot.backend.exceptions.BadRequestException;
 import devPilot.backend.exceptions.NotFoundException;
 import devPilot.backend.repository.RepositoryRepository;
+import devPilot.backend.services.ai.AiErrors;
 import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.ai.AiKeyResolver.UserAiKey;
 import devPilot.backend.services.ai.AiModelFactory;
 import devPilot.backend.services.ai.RagSettings;
-import devPilot.backend.services.github.GitHubRateLimiter;
+import devPilot.backend.services.github.GitHubException;
 import devPilot.backend.services.github.GithubApiClient;
-import jakarta.transaction.Transactional;
+import devPilot.backend.services.github.GithubApiClient.FileChange;
+import devPilot.backend.services.github.GithubApiClient.SourceFile;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Indexes a repository into pgvector.
+ *
+ * <p>The first run downloads the repository as one zip, chunks every eligible file and
+ * embeds the chunks. Later runs are incremental: GitHub's compare API says which files
+ * changed since the indexed commit, and only those files are deleted and re-embedded.
+ * If nothing changed, nothing is embedded at all.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class IndexingService {
-    private static final int VECTOR_BATCH_SIZE = 32;
-    private static final int PROGRESS_EVERY_N_FILES = 5;
+
+    public static final String MODE_FULL = "FULL";
+    public static final String MODE_INCREMENTAL = "INCREMENTAL";
+    public static final String MODE_UP_TO_DATE = "UP_TO_DATE";
+
+    private static final int VECTOR_BATCH_SIZE = 64;
 
     private final RepositoryRepository repositoryRepository;
     private final GithubApiClient gitHubApiClient;
     private final CodeFileFilter fileFilter;
     private final CodeChunker codeChunker;
-    private final GitHubRateLimiter rateLimiter;
     private final AiKeyResolver aiKeyResolver;
     private final AiModelFactory aiModelFactory;
+    private final JdbcTemplate jdbcTemplate;
 
     private final ConcurrentHashMap<UUID, AtomicBoolean> pauseFlags = new ConcurrentHashMap<>();
 
@@ -51,54 +69,35 @@ public class IndexingService {
 
     public Repository startIndexing(UUID repoId, String apiKey, String provider) {
         aiKeyResolver.requireKey(apiKey, provider);
-        Repository repo = repositoryRepository.findById(repoId)
-                .orElseThrow(() -> new NotFoundException("Repository not found"));
-
+        Repository repo = require(repoId);
         if (repo.getIndexStatus() == IndexStatus.INDEXING) {
             throw new BadRequestException("Repository is already being indexed");
         }
         if (repo.getIndexStatus() == IndexStatus.PAUSED) {
-            throw new BadRequestException("Indexing is paused — resume it to continue");
+            throw new BadRequestException("Indexing is paused. Resume it to continue");
         }
-
         pauseFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
+        repo.setIndexPhase("Queued");
         repo.setFilesProcessed(0);
         repo.setFilesTotal(0);
-        repo.setChunkCount(0);
         repo.setErrorMessage(null);
         repo.setUpdatedAt(Instant.now());
         return repositoryRepository.save(repo);
     }
 
     @Async("indexingExecutor")
-     public void indexAsync(UUID repoId, String apiKey, String provider) {
-        doIndexAsync(repoId, apiKey, provider, false);
+    public void indexAsync(UUID repoId, String apiKey, String provider) {
+        run(repoId, apiKey, provider, false);
     }
 
     @Async("indexingExecutor")
     public void resumeAsync(UUID repoId, String apiKey, String provider) {
-        doIndexAsync(repoId, apiKey, provider, true);
-    }
-
-    private void doIndexAsync(UUID repoId, String apiKey, String provider, boolean resume) {
-        try {
-            doIndex(repoId, apiKey, provider, resume);
-        } catch (Exception ex) {
-            if (isPaused(repoId)) {
-                markPaused(repoId);
-            } else {
-                log.error("Indexing failed for repo {}", repoId, ex);
-                markFailed(repoId, ex.getMessage());
-            }
-        } finally {
-            pauseFlags.remove(repoId);
-        }
+        run(repoId, apiKey, provider, true);
     }
 
     public Repository pauseIndexing(UUID repoId) {
-        Repository repo = repositoryRepository.findById(repoId)
-                .orElseThrow(() -> new NotFoundException("Repository not found"));
+        Repository repo = require(repoId);
         if (repo.getIndexStatus() != IndexStatus.INDEXING) {
             throw new BadRequestException("Repository is not being indexed");
         }
@@ -108,16 +107,196 @@ public class IndexingService {
 
     public Repository resumeIndexing(UUID repoId, String apiKey, String provider) {
         aiKeyResolver.requireKey(apiKey, provider);
-        Repository repo = repositoryRepository.findById(repoId)
-                .orElseThrow(() -> new NotFoundException("Repository not found"));
+        Repository repo = require(repoId);
         if (repo.getIndexStatus() != IndexStatus.PAUSED) {
             throw new BadRequestException("Indexing is not paused");
         }
+        pauseFlags.put(repoId, new AtomicBoolean(false));
         repo.setIndexStatus(IndexStatus.INDEXING);
+        repo.setIndexPhase("Resuming");
         repo.setErrorMessage(null);
         repo.setUpdatedAt(Instant.now());
-        pauseFlags.put(repoId, new AtomicBoolean(false));
         return repositoryRepository.save(repo);
+    }
+
+    /** Runs one index job synchronously. Public so tests can drive it without @Async. */
+    public void run(UUID repoId, String apiKey, String provider, boolean resume) {
+        UserAiKey key = aiKeyResolver.requireKey(apiKey, provider);
+        long started = System.nanoTime();
+        try {
+            String mode = index(repoId, key, resume);
+            if (mode != null) {
+                long millis = (System.nanoTime() - started) / 1_000_000;
+                markReady(repoId, key, mode, millis);
+            }
+        } catch (GitHubException ex) {
+            log.warn("Indexing {} failed: {}", repoId, ex.getMessage());
+            markFailed(repoId, ex.getMessage());
+        } catch (Exception ex) {
+            if (isPaused(repoId)) {
+                update(repoId, r -> {
+                    r.setIndexStatus(IndexStatus.PAUSED);
+                    r.setIndexPhase("Paused");
+                });
+            } else {
+                log.error("Indexing failed for repo {}", repoId, ex);
+                markFailed(repoId, AiErrors.describe(ex, key.provider()));
+            }
+        } finally {
+            pauseFlags.remove(repoId);
+        }
+    }
+
+    /** Returns the mode that finished, or null when the job was paused. */
+    private String index(UUID repoId, UserAiKey key, boolean resume) {
+        Repository repo = require(repoId);
+        VectorStore store = aiModelFactory.vectorStore(key.provider(), key.apiKey());
+        String providerName = key.provider().name();
+
+        phase(repoId, "Checking latest commit");
+        String head = resume && repo.getPendingSha() != null
+                ? repo.getPendingSha()
+                : gitHubApiClient.getHeadSha(repo.getOwner(), repo.getName(), repo.getDefaultBranch());
+
+        boolean sameProvider = providerName.equals(repo.getEmbeddingProvider());
+        // A full run clears indexedSha first, so a non-null value means a complete earlier
+        // index exists (a paused incremental run is simply redone; it is idempotent).
+        boolean hasIndex = repo.getIndexedSha() != null && sameProvider;
+
+        if (hasIndex && head.equals(repo.getIndexedSha())) {
+            return MODE_UP_TO_DATE;
+        }
+        if (hasIndex) {
+            phase(repoId, "Finding changed files");
+            List<FileChange> changes = gitHubApiClient.compare(
+                    repo.getOwner(), repo.getName(), repo.getIndexedSha(), head);
+            if (changes != null) {
+                update(repoId, r -> r.setPendingSha(head));
+                return indexChanges(repo, store, head, changes) ? MODE_INCREMENTAL : null;
+            }
+            log.info("Compare unavailable for {}, falling back to a full index", repo.getFullName());
+        }
+        return indexEverything(repo, store, head, providerName, resume) ? MODE_FULL : null;
+    }
+
+    private boolean indexEverything(Repository repo, VectorStore store, String head, String providerName, boolean resume) {
+        UUID repoId = repo.getId();
+        int startFrom = 0;
+        if (resume) {
+            startFrom = repo.getFilesProcessed();
+        } else {
+            phase(repoId, "Clearing old vectors");
+            deleteVectors(store, repoId, null);
+            update(repoId, r -> {
+                r.setIndexedSha(null);
+                r.setPendingSha(head);
+                r.setEmbeddingProvider(providerName);
+                r.setChunkCount(0);
+            });
+        }
+
+        phase(repoId, "Downloading repository");
+        List<SourceFile> files = gitHubApiClient.downloadSnapshot(
+                repo.getOwner(), repo.getName(), head, this::eligible, maxFileBytes);
+        files = files.stream().sorted((a, b) -> a.path().compareTo(b.path())).toList();
+        return embedFiles(repoId, store, files, Math.min(startFrom, files.size()));
+    }
+
+    private boolean indexChanges(Repository repo, VectorStore store, String head, List<FileChange> changes) {
+        UUID repoId = repo.getId();
+        Set<String> toDelete = new HashSet<>();
+        Set<String> toEmbed = new HashSet<>();
+        for (FileChange change : changes) {
+            toDelete.add(change.path());
+            if (change.previousPath() != null) {
+                toDelete.add(change.previousPath());
+            }
+            if (!change.removed() && eligible(change.path())) {
+                toEmbed.add(change.path());
+            }
+        }
+
+        phase(repoId, "Removing vectors for " + toDelete.size() + " changed file(s)");
+        for (String path : toDelete) {
+            deleteVectors(store, repoId, path);
+        }
+        if (toEmbed.isEmpty()) {
+            update(repoId, r -> {
+                r.setFilesTotal(0);
+                r.setFilesProcessed(0);
+            });
+            return true;
+        }
+        phase(repoId, "Downloading changed files");
+        List<SourceFile> files = gitHubApiClient.downloadSnapshot(
+                repo.getOwner(), repo.getName(), head, toEmbed::contains, maxFileBytes);
+        return embedFiles(repoId, store, files, 0);
+    }
+
+    /** Chunks and embeds {@code files[startFrom..]}; false if the job was paused. */
+    private boolean embedFiles(UUID repoId, VectorStore store, List<SourceFile> files, int startFrom) {
+        int total = files.size();
+        update(repoId, r -> {
+            r.setFilesTotal(total);
+            r.setFilesProcessed(startFrom);
+            r.setIndexPhase("Embedding code");
+        });
+        List<Document> batch = new ArrayList<>();
+        int processed = startFrom;
+        for (SourceFile file : files.subList(startFrom, total)) {
+            if (isPaused(repoId)) {
+                flush(store, batch);
+                int done = processed;
+                update(repoId, r -> {
+                    r.setFilesProcessed(done);
+                    r.setIndexStatus(IndexStatus.PAUSED);
+                    r.setIndexPhase("Paused");
+                });
+                log.info("Indexing paused for repo {} at {}/{} files", repoId, done, total);
+                return false;
+            }
+            batch.addAll(codeChunker.chunkFile(repoId.toString(), file.path(), file.content()));
+            processed++;
+            if (batch.size() >= VECTOR_BATCH_SIZE) {
+                flush(store, batch);
+                int done = processed;
+                update(repoId, r -> r.setFilesProcessed(done));
+            }
+        }
+        flush(store, batch);
+        int done = processed;
+        update(repoId, r -> r.setFilesProcessed(done));
+        return true;
+    }
+
+    /** Embedding errors propagate: a bad key must fail the job, not mark it READY with no vectors. */
+    private static void flush(VectorStore store, List<Document> batch) {
+        if (!batch.isEmpty()) {
+            store.add(List.copyOf(batch));
+            batch.clear();
+        }
+    }
+
+    boolean eligible(String path) {
+        // Size is checked again on the downloaded bytes; the zip has no reliable size up front.
+        return fileFilter.isEligible(path, 0, maxFileBytes);
+    }
+
+    private void deleteVectors(VectorStore store, UUID repoId, String filePath) {
+        var b = new FilterExpressionBuilder();
+        var filter = filePath == null
+                ? b.eq(RagSettings.METADATA_REPO_ID, repoId.toString()).build()
+                : b.and(b.eq(RagSettings.METADATA_REPO_ID, repoId.toString()),
+                        b.eq(RagSettings.METADATA_FILE_PATH, filePath)).build();
+        store.delete(filter);
+    }
+
+    private int countVectors(UserAiKey key, UUID repoId) {
+        String table = aiModelFactory.tableName(key.provider());
+        Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from public." + table + " where metadata->>'repoId' = ?",
+                Integer.class, repoId.toString());
+        return count == null ? 0 : count;
     }
 
     private boolean isPaused(UUID repoId) {
@@ -125,169 +304,47 @@ public class IndexingService {
         return flag != null && flag.get();
     }
 
-
-    private void doIndex(UUID repoId, String apiKey, String provider, boolean resume) {
-        Repository repo = repositoryRepository.findById(repoId)
+    private Repository require(UUID repoId) {
+        return repositoryRepository.findById(repoId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
-        var userKey = aiKeyResolver.requireKey(apiKey, provider);
-        VectorStore userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
-
-        Map<String, Object> tree = gitHubApiClient.getRepoTree(
-                repo.getOwner(), repo.getName(), repo.getDefaultBranch());
-        List<String> filePaths = listIndexableFiles(tree);
-
-        int startFrom = 0;
-        int totalChunks = 0;
-        if (resume) {
-            startFrom = Math.min(repo.getFilesProcessed(), filePaths.size());
-            totalChunks = repo.getChunkCount();
-        } else {
-            deleteExistingVectors(userVectorStore, repoId.toString());
-        }
-
-        updateProgress(repoId, filePaths.size(), startFrom, totalChunks, IndexStatus.INDEXING, null);
-
-        List<Document> batch = new ArrayList<>();
-        int processed = startFrom;
-
-        for (String path : filePaths.subList(startFrom, filePaths.size())) {
-            if (isPaused(repoId)) {
-                flushAndPause(repoId, userVectorStore, batch,
-                        filePaths.size(), processed, totalChunks);
-                return;
-            }
-            try {
-                String content = gitHubApiClient.getFileContent(
-                        repo.getOwner(), repo.getName(), path);
-                List<Document> chunks = codeChunker.chunkFile(repoId.toString(), path, content);
-                batch.addAll(chunks);
-                totalChunks += chunks.size();
-                if (batch.size() >= VECTOR_BATCH_SIZE) {
-                    if (isPaused(repoId)) {
-                        flushAndPause(repoId, userVectorStore, batch,
-                                filePaths.size(), processed, totalChunks);
-                        return;
-                    }
-                    userVectorStore.add(batch);
-                    batch.clear();
-                }
-            } catch (Exception ex) {
-                log.warn("Skipping file {} in {}: {}", path, repo.getFullName(), ex.getMessage());
-            }
-
-            processed++;
-            if (processed % PROGRESS_EVERY_N_FILES == 0 || processed == filePaths.size()) {
-                updateProgress(repoId, filePaths.size(), processed, totalChunks, IndexStatus.INDEXING, null);
-            }
-            rateLimiter.pause();
-        }
-
-        if (!batch.isEmpty()) {
-            userVectorStore.add(batch);
-        }
-
-        markReady(repoId, filePaths.size(), processed, totalChunks, repo.getFullName());
     }
 
-    /** Persist any buffered vectors, then park the job as PAUSED for later resume. */
-    private void flushAndPause(UUID repoId, VectorStore store, List<Document> batch,
-            int total, int processed, int chunks) {
-        if (!batch.isEmpty()) {
-            try {
-                store.add(batch);
-            } catch (Exception ex) {
-                log.warn("Could not flush final batch for paused repo {}: {}", repoId, ex.getMessage());
-            }
-            batch.clear();
-        }
-        updateProgress(repoId, total, processed, chunks, IndexStatus.PAUSED, null);
-        log.info("Indexing paused for repo {} at {}/{} files", repoId, processed, total);
+    private void phase(UUID repoId, String phase) {
+        update(repoId, r -> r.setIndexPhase(phase));
     }
 
-
-        @SuppressWarnings("unchecked")
-    private List<String> listIndexableFiles(Map<String, Object> tree) {
-        if (tree == null || tree.get("tree") == null) {
-            return List.of();
-        }
-
-        List<Map<String, Object>> entries = (List<Map<String, Object>>) tree.get("tree");
-        return entries.stream()
-                .filter(entry -> "blob".equals(String.valueOf(entry.get("type"))))
-                .filter(entry -> {
-                    String path = String.valueOf(entry.get("path"));
-                    long size = entry.get("size") instanceof Number n ? n.longValue() : 0L;
-                    return fileFilter.isEligible(path, size, maxFileBytes);
-                })
-                .map(entry -> String.valueOf(entry.get("path")))
-                .sorted()
-                .toList();
-    }
-
-     private void deleteExistingVectors(VectorStore store, String repoId) {
-         try {
-             var filter = new FilterExpressionBuilder().eq(RagSettings.METADATA_REPO_ID, repoId).build();
-             store.delete(filter);
-         } catch (Exception ex) {
-             log.warn("Could not delete existing vectors for repo {}: {}", repoId, ex.getMessage());
-         }
-     };
-
-       @Transactional
-    protected void updateProgress(
-            UUID repoId,
-            int total,
-            int processed,
-            int chunks,
-            IndexStatus status,
-            String error) {
+    private void update(UUID repoId, Consumer<Repository> change) {
         repositoryRepository.findById(repoId).ifPresent(repo -> {
-            repo.setFilesTotal(total);
-            repo.setFilesProcessed(processed);
-            repo.setChunkCount(chunks);
-            repo.setIndexStatus(status);
-            repo.setErrorMessage(error);
+            change.accept(repo);
             repo.setUpdatedAt(Instant.now());
             repositoryRepository.save(repo);
         });
     }
 
-       @Transactional
-    protected void markReady(UUID repoId, int totalFiles, int processedFiles, int totalChunks, String fullName) {
-        repositoryRepository.findById(repoId).ifPresent(repo -> {
+    private void markReady(UUID repoId, UserAiKey key, String mode, long millis) {
+        int chunks = countVectors(key, repoId);
+        update(repoId, repo -> {
+            if (repo.getPendingSha() != null) {
+                repo.setIndexedSha(repo.getPendingSha());
+            }
+            repo.setPendingSha(null);
             repo.setIndexStatus(IndexStatus.READY);
-            repo.setFilesTotal(totalFiles);
-            repo.setFilesProcessed(processedFiles);
-            repo.setChunkCount(totalChunks);
+            repo.setIndexPhase(null);
+            repo.setEmbeddingProvider(key.provider().name());
+            repo.setChunkCount(chunks);
+            repo.setLastIndexMode(mode);
+            repo.setLastIndexDurationMs(millis);
             repo.setIndexedAt(Instant.now());
             repo.setErrorMessage(null);
-            repo.setUpdatedAt(Instant.now());
-            repositoryRepository.save(repo);
+            log.info("Indexed {} ({}): {} chunks in {} ms", repo.getFullName(), mode, chunks, millis);
         });
-        log.info("Indexed {} files ({} chunks) for {}", processedFiles, totalChunks, fullName);
     }
 
-     @Transactional
-    protected void markPaused(UUID repoId) {
-        repositoryRepository.findById(repoId).ifPresent(repo -> {
-            repo.setIndexStatus(IndexStatus.PAUSED);
-            repo.setErrorMessage(null);
-            repo.setUpdatedAt(Instant.now());
-            repositoryRepository.save(repo);
-        });
-        log.info("Indexing paused for repo {}", repoId);
-    }
-
-       @Transactional
-    protected void markFailed(UUID repoId, String message) {
-        repositoryRepository.findById(repoId).ifPresent(repo -> {
+    private void markFailed(UUID repoId, String message) {
+        update(repoId, repo -> {
             repo.setIndexStatus(IndexStatus.FAILED);
-            repo.setErrorMessage(message != null && message.length() > 2000
-                    ? message.substring(0, 2000)
-                    : message);
-            repo.setUpdatedAt(Instant.now());
-            repositoryRepository.save(repo);
+            repo.setIndexPhase(null);
+            repo.setErrorMessage(message);
         });
     }
-
 }

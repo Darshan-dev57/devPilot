@@ -12,5 +12,9 @@ public record IndexStatusResponse(
         int filesProcessed,
         int chunkCount,
         Instant indexedAt,
-        String errorMessage) {
+        String errorMessage,
+        String indexPhase,
+        String indexedSha,
+        String lastIndexMode,
+        Long lastIndexDurationMs) {
 }

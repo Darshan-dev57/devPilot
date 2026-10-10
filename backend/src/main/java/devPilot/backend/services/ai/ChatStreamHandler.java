@@ -16,6 +16,8 @@ import devPilot.backend.entity.ChatMessage;
 import devPilot.backend.entity.MessageRole;
 import devPilot.backend.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
+import reactor.core.Disposable;
+import tools.jackson.databind.json.JsonMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -28,6 +30,7 @@ public class ChatStreamHandler {
 
     private final ChatMessageRepository chatMessageRepository;
     private final CitationMapper citationMapper;
+    private final JsonMapper jsonMapper;
 
     /**
      * Stream using a caller-supplied model, e.g. a per-request BYOK model.
@@ -35,6 +38,7 @@ public class ChatStreamHandler {
      */
     public SseEmitter stream(
             ChatModel model,
+            AiProvider provider,
             UUID sessionId,
             ChatMessageResponse savedUserMessage,
             List<CitationDto> citations,
@@ -49,53 +53,58 @@ public class ChatStreamHandler {
                     .name("user_message")
                     .data(savedUserMessage));
 
-            ChatClient.builder(model)
+            Disposable subscription = ChatClient.builder(model)
                     .build()
                     .prompt()
                     .system(systemPrompt)
                     .user(userPrompt)
                     .stream()
                     .content()
-                    .doOnNext(token -> appendToken(emitter, fullReply, token))
-                    .doOnError(err -> {
-                        log.error("Chat stream error", err);
-                        sendErrorAndComplete(emitter, err);
-                    })
-                    .doOnComplete(() -> completeStream(
-                            emitter, sessionId, fullReply, citations))
-                    .subscribe();
+                    .subscribe(
+                            token -> appendToken(emitter, fullReply, token),
+                            err -> {
+                                log.warn("Chat stream error: {}", err.toString());
+                                sendErrorAndComplete(emitter, AiErrors.describe(err, provider));
+                            },
+                            () -> completeStream(emitter, sessionId, fullReply, citations));
+            // Stop paying for tokens nobody will read when the browser goes away.
+            emitter.onCompletion(subscription::dispose);
+            emitter.onTimeout(subscription::dispose);
+            emitter.onError(err -> subscription.dispose());
         } catch (Exception ex) {
-            log.error("Chat stream setup failed", ex);
-            sendErrorAndComplete(emitter, ex);
+            log.warn("Chat stream setup failed: {}", ex.toString());
+            sendErrorAndComplete(emitter, AiErrors.describe(ex, provider));
         }
 
         return emitter;
     }
 
-    private void sendErrorAndComplete(SseEmitter emitter, Throwable err) {
+    private void sendErrorAndComplete(SseEmitter emitter, String message) {
         try {
-            String message = err.getMessage() != null ? err.getMessage() : "AI request failed";
-            if (message.length() > 500) {
-                message = message.substring(0, 500);
-            }
             emitter.send(SseEmitter.event()
                     .name("error")
                     .data(Map.of("message", message), MediaType.APPLICATION_JSON));
+            // complete(), not completeWithError(): the error is already in the stream as an
+            // event, and completeWithError would make Spring try to write a second error body.
+            emitter.complete();
         } catch (Exception sendEx) {
-            log.warn("Could not send error event to client", sendEx);
-        } finally {
-            emitter.completeWithError(err);
+            log.debug("Could not send error event to client: {}", sendEx.toString());
         }
     }
 
+    /**
+     * Tokens are sent as JSON string literals. Sent raw, a token with a leading space loses it
+     * (the SSE parser strips one space after "data:") and a token with a newline is split
+     * across data lines, so the client's JSON.parse failed on almost every token.
+     */
     private void appendToken(SseEmitter emitter, StringBuilder fullReply, String token) {
         fullReply.append(token);
         try {
             emitter.send(SseEmitter.event()
                     .name("token")
-                    .data(token, MediaType.APPLICATION_JSON));
+                    .data(jsonMapper.writeValueAsString(token)));
         } catch (Exception ex) {
-            throw new IllegalStateException(ex);
+            throw new IllegalStateException("Client disconnected", ex);
         }
     }
 
@@ -123,8 +132,8 @@ public class ChatStreamHandler {
             emitter.send(SseEmitter.event().name("done").data("[DONE]"));
             emitter.complete();
         } catch (Exception ex) {
-            log.error("Failed to complete chat stream", ex);
-            sendErrorAndComplete(emitter, ex);
+            log.warn("Failed to complete chat stream: {}", ex.toString());
+            sendErrorAndComplete(emitter, "Could not save the answer. Please try again.");
         }
     }
 

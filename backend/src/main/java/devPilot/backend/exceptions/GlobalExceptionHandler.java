@@ -7,10 +7,18 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.github.GitHubException;
+import lombok.extern.slf4j.Slf4j;
 
 
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(NotFoundException.class)
@@ -37,9 +45,35 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, message);
     }
 
+    @ExceptionHandler(GitHubException.class)
+    ResponseEntity<Map<String, Object>> handleGitHub(GitHubException ex) {
+        HttpStatus status = switch (ex.getKind()) {
+            case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case PRIVATE_REPO -> HttpStatus.FORBIDDEN;
+            case RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
+            case BAD_SERVER_TOKEN, UNAVAILABLE -> HttpStatus.BAD_GATEWAY;
+        };
+        return error(status, ex.getMessage());
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    ResponseEntity<Map<String, Object>> handleMissingHeader(MissingRequestHeaderException ex) {
+        if ("X-Api-Key".equalsIgnoreCase(ex.getHeaderName())) {
+            return error(HttpStatus.BAD_REQUEST, AiKeyResolver.MISSING_KEY_MESSAGE);
+        }
+        return error(HttpStatus.BAD_REQUEST, "Missing header " + ex.getHeaderName());
+    }
+
+    @ExceptionHandler({ HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class })
+    ResponseEntity<Map<String, Object>> handleUnreadable(Exception ex) {
+        return error(HttpStatus.BAD_REQUEST, "The request was not in the expected format.");
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        return error(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage() != null ? ex.getMessage() : "Unexpected error");
+        // Raw exception text can carry upstream bodies or internals; log it, don't return it.
+        log.error("Unhandled error", ex);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong on the server. Please try again.");
     }
 
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String message) {

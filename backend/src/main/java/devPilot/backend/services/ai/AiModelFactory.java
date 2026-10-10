@@ -1,5 +1,9 @@
 package devPilot.backend.services.ai;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,7 +46,7 @@ public class AiModelFactory {
     private final RestClient.Builder restClientBuilder;
 
     // OpenAI group (legacy app.ai.* keys still work as fallback).
-    @Value("${app.ai.openai.base-url:${app.ai.base-url:https://api.openai.com}}")
+    @Value("${app.ai.openai.base-url:${app.ai.base-url:https://api.openai.com/v1}}")
     private String openaiBaseUrl;
 
     @Value("${app.ai.openai.chat-model:${app.ai.chat-model:gpt-4o-mini}}")
@@ -67,17 +71,25 @@ public class AiModelFactory {
     @Value("${app.ai.gemini.embedding-dimensions:768}")
     private int geminiEmbeddingDimensions;
 
+    @Value("${app.ai.gemini.native-base-url:https://generativelanguage.googleapis.com}")
+    private String geminiNativeBaseUrl;
+
+    /** Keys are visitors' own; cap how many per-key clients stay cached in memory. */
+    private static final int MAX_CACHED_KEYS = 200;
+
     private final Map<String, ChatModel> chatModels = new ConcurrentHashMap<>();
     private final Map<String, VectorStore> vectorStores = new ConcurrentHashMap<>();
 
     private final HttpClient httpClient = SpringAiOpenAiHttpClient.builder().build();
 
     public ChatModel chatModel(AiProvider provider, String apiKey) {
+        trimCaches();
         return chatModels.computeIfAbsent(
                 cacheKey(provider, apiKey), k -> buildChatModel(provider, apiKey));
     }
 
     public VectorStore vectorStore(AiProvider provider, String apiKey) {
+        trimCaches();
         return vectorStores.computeIfAbsent(
                 cacheKey(provider, apiKey), k -> buildVectorStore(provider, apiKey));
     }
@@ -87,8 +99,25 @@ public class AiModelFactory {
         vectorStores.clear();
     }
 
+    private void trimCaches() {
+        if (chatModels.size() > MAX_CACHED_KEYS || vectorStores.size() > MAX_CACHED_KEYS) {
+            evict();
+        }
+    }
+
+    /** SHA-256 rather than hashCode(): two different keys must never share a client. */
     private static String cacheKey(AiProvider provider, String apiKey) {
-        return provider + ":" + apiKey.hashCode();
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(apiKey.getBytes(StandardCharsets.UTF_8));
+            return provider + ":" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    /** Table holding this provider's vectors (dimensions differ per provider). */
+    public String tableName(AiProvider provider) {
+        return provider.tableName();
     }
 
     private OpenAIClient client(String baseUrl, String apiKey) {
@@ -99,7 +128,8 @@ public class AiModelFactory {
                 .build());
     }
 
-    private ChatModel buildChatModel(AiProvider provider, String apiKey) {
+    /** Chat model for a visitor's key. Protected so tests can swap in a fake. */
+    protected ChatModel buildChatModel(AiProvider provider, String apiKey) {
         if (provider == AiProvider.GEMINI) {
             return OpenAiChatModel.builder()
                     .openAiClient(client(geminiBaseUrl, apiKey))
@@ -120,16 +150,18 @@ public class AiModelFactory {
                 .build();
     }
 
-    private VectorStore buildVectorStore(AiProvider provider, String apiKey) {
-        EmbeddingModel embeddingModel;
-        int dimensions;
+    protected int dimensions(AiProvider provider) {
+        return provider == AiProvider.GEMINI ? geminiEmbeddingDimensions : openaiEmbeddingDimensions;
+    }
+
+    /** Embedding model for a visitor's key. Protected so tests can swap in a fake. */
+    protected EmbeddingModel embeddingModel(AiProvider provider, String apiKey) {
+        int dimensions = dimensions(provider);
         if (provider == AiProvider.GEMINI) {
-            dimensions = geminiEmbeddingDimensions;
-            embeddingModel = new GeminiEmbeddingModel(
-                    apiKey, geminiEmbeddingModel, dimensions, restClientBuilder.build());
-        } else {
-            dimensions = openaiEmbeddingDimensions;
-            embeddingModel = OpenAiEmbeddingModel.builder()
+            return new GeminiEmbeddingModel(
+                    apiKey, geminiNativeBaseUrl, geminiEmbeddingModel, dimensions, restClientBuilder.clone().build());
+        }
+        return OpenAiEmbeddingModel.builder()
                     .openAiClient(client(openaiBaseUrl, apiKey))
                     .options(OpenAiEmbeddingOptions.builder()
                             .model(openaiEmbeddingModel)
@@ -138,8 +170,11 @@ public class AiModelFactory {
                             .baseUrl(openaiBaseUrl)
                             .build())
                     .build();
-        }
+    }
 
+    private VectorStore buildVectorStore(AiProvider provider, String apiKey) {
+        EmbeddingModel embeddingModel = embeddingModel(provider, apiKey);
+        int dimensions = dimensions(provider);
         PgVectorStore store = PgVectorStore.builder(jdbcTemplate, embeddingModel)
                 .schemaName("public")
                 .vectorTableName(provider.tableName())

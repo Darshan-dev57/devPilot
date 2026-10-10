@@ -84,6 +84,29 @@ public class Repository {
     @Builder.Default
     private int filesProcessed = 0;
 
+    /** Commit the vectors currently reflect; the base for the next incremental re-index. */
+    @Column(name = "indexed_sha", length = 40)
+    private String indexedSha;
+
+    /** Commit an in-progress (or paused) index run is working towards. */
+    @Column(name = "pending_sha", length = 40)
+    private String pendingSha;
+
+    /** OPENAI or GEMINI: which embedding model the stored vectors came from. */
+    @Column(name = "embedding_provider", length = 20)
+    private String embeddingProvider;
+
+    /** What the last run did: FULL, INCREMENTAL or UP_TO_DATE. */
+    @Column(name = "last_index_mode", length = 20)
+    private String lastIndexMode;
+
+    @Column(name = "last_index_duration_ms")
+    private Long lastIndexDurationMs;
+
+    /** Human-readable step of the running job, e.g. "Downloading repository". */
+    @Column(name = "index_phase", length = 100)
+    private String indexPhase;
+
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
