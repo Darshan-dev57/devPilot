@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,10 +19,15 @@ import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
 import devPilot.backend.entity.Repository;
 import devPilot.backend.services.RepoService;
+import devPilot.backend.services.Visitors;
 import devPilot.backend.services.indexing.IndexingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * Every call carries X-Visitor-Id, a random id the browser keeps. It is not a login: it
+ * only scopes the repo list so each visitor sees just the repos they added.
+ */
 @RestController
 @RequestMapping("/api/repos")
 @RequiredArgsConstructor
@@ -31,34 +37,46 @@ public class RepoController {
     private final IndexingService indexingService;
 
     @GetMapping
-    public List<RepositoryResponse> list() {
-        return repoService.listStored();
+    public List<RepositoryResponse> list(@RequestHeader(Visitors.HEADER) String visitor) {
+        return repoService.listFor(Visitors.parse(visitor));
     }
 
     @GetMapping("/{id}")
-    public RepositoryResponse get(@PathVariable UUID id) {
-        return repoService.toResponse(repoService.requireOwned(id));
+    public RepositoryResponse get(@PathVariable UUID id, @RequestHeader(Visitors.HEADER) String visitor) {
+        return repoService.toResponse(repoService.requireVisible(id, Visitors.parse(visitor)));
     }
 
     @PostMapping("/by-url")
     public ResponseEntity<RepositoryResponse> addByUrl(
-            @Valid @RequestBody AddPublicRepoRequest request) {
-        Repository repo = repoService.addPublicRepo(request.owner().trim(), request.name().trim());
+            @Valid @RequestBody AddPublicRepoRequest request,
+            @RequestHeader(Visitors.HEADER) String visitor) {
+        Repository repo = repoService.addPublicRepo(
+                request.owner().trim(), request.name().trim(), Visitors.parse(visitor));
         return ResponseEntity.ok(repoService.toResponse(repo));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> remove(@PathVariable UUID id, @RequestHeader(Visitors.HEADER) String visitor) {
+        repoService.remove(id, Visitors.parse(visitor));
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/index")
     public ResponseEntity<RepositoryResponse> index(
             @PathVariable UUID id,
+            @RequestHeader(Visitors.HEADER) String visitor,
             @RequestHeader("X-Api-Key") String apiKey,
             @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
+        repoService.requireVisible(id, Visitors.parse(visitor));
         Repository repo = indexingService.startIndexing(id, apiKey, provider);
         indexingService.indexAsync(id, apiKey, provider);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
     @PostMapping("/{id}/pause-index")
-    public ResponseEntity<RepositoryResponse> pauseIndex(@PathVariable UUID id) {
+    public ResponseEntity<RepositoryResponse> pauseIndex(
+            @PathVariable UUID id, @RequestHeader(Visitors.HEADER) String visitor) {
+        repoService.requireVisible(id, Visitors.parse(visitor));
         Repository repo = indexingService.pauseIndexing(id);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
@@ -66,15 +84,17 @@ public class RepoController {
     @PostMapping("/{id}/resume-index")
     public ResponseEntity<RepositoryResponse> resumeIndex(
             @PathVariable UUID id,
+            @RequestHeader(Visitors.HEADER) String visitor,
             @RequestHeader("X-Api-Key") String apiKey,
             @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
+        repoService.requireVisible(id, Visitors.parse(visitor));
         Repository repo = indexingService.resumeIndexing(id, apiKey, provider);
         indexingService.resumeAsync(id, apiKey, provider);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
     @GetMapping("/{id}/status")
-    public IndexStatusResponse status(@PathVariable UUID id) {
-        return repoService.status(id);
+    public IndexStatusResponse status(@PathVariable UUID id, @RequestHeader(Visitors.HEADER) String visitor) {
+        return repoService.status(id, Visitors.parse(visitor));
     }
 }

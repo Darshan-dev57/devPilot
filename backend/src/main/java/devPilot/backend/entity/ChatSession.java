@@ -37,6 +37,10 @@ public class ChatSession {
     @Column(name = "repository_id", nullable = false)
     private UUID repositoryId;
 
+    /** The anonymous visitor who owns this chat; chats are never shared between visitors. */
+    @Column(name = "visitor_id")
+    private UUID visitorId;
+
     @Column(nullable = false, length = 200)
     private String title;
 

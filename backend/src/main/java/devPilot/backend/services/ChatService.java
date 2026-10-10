@@ -44,8 +44,8 @@ public class ChatService {
     private final AiModelFactory aiModelFactory;
 
     @Transactional
-    public ChatSessionResponse createSession(CreateChatSessionRequest request) {
-        Repository repo = repoService.requireOwned(request.repositoryId());
+    public ChatSessionResponse createSession(CreateChatSessionRequest request, UUID visitorId) {
+        Repository repo = repoService.requireVisible(request.repositoryId(), visitorId);
         if (repo.getIndexStatus() != IndexStatus.READY) {
             throw new BadRequestException("Repository must be indexed before chatting");
         }
@@ -56,6 +56,7 @@ public class ChatService {
 
         ChatSession session = ChatSession.builder()
                 .repositoryId(repo.getId())
+                .visitorId(visitorId)
                 .title(title)
                 .build();
         session = chatSessionRepository.save(session);
@@ -63,32 +64,33 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChatSessionResponse> listSessions(UUID repositoryId) {
-        repoService.requireOwned(repositoryId);
+    public List<ChatSessionResponse> listSessions(UUID repositoryId, UUID visitorId) {
+        repoService.requireVisible(repositoryId, visitorId);
         return chatSessionRepository
-                .findByRepositoryIdOrderByCreatedAtDesc(repositoryId)
+                .findByRepositoryIdAndVisitorIdOrderByCreatedAtDesc(repositoryId, visitorId)
                 .stream()
                 .map(this::toSessionResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<ChatMessageResponse> getMessages(UUID sessionId) {
-        ChatSession session = requireSession(sessionId);
+    public List<ChatMessageResponse> getMessages(UUID sessionId, UUID visitorId) {
+        ChatSession session = requireSession(sessionId, visitorId);
         return chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId()).stream()
                 .map(this::toMessageResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public ChatSession requireSession(UUID sessionId) {
+    public ChatSession requireSession(UUID sessionId, UUID visitorId) {
         return chatSessionRepository.findById(sessionId)
+                .filter(session -> visitorId.equals(session.getVisitorId()))
                 .orElseThrow(() -> new NotFoundException("Chat session not found"));
     }
 
-    public SseEmitter streamReply(UUID sessionId, String userContent, String apiKey, String provider) {
-        ChatSession session = requireSession(sessionId);
-        Repository repo = repoService.requireOwned(session.getRepositoryId());
+    public SseEmitter streamReply(UUID sessionId, UUID visitorId, String userContent, String apiKey, String provider) {
+        ChatSession session = requireSession(sessionId, visitorId);
+        Repository repo = repoService.requireVisible(session.getRepositoryId(), visitorId);
         if (repo.getIndexStatus() != IndexStatus.READY) {
             throw new BadRequestException("Repository is not ready for chat");
         }
