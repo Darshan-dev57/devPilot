@@ -49,7 +49,7 @@ export function IndexingState({ repo, status }: { repo: Repository; status?: Ind
             <Sparkles className="size-5 text-primary" />
             <h2 className="mt-3 text-lg font-semibold">Index {repo.name} to start chatting</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              DevPilot downloads the repo once, splits it by class and method, and embeds it with your key.
+              DevPilot downloads the repo once, splits it by class and method, and embeds it once. Anyone who adds the same repo later reuses that index.
             </p>
             <button className={`${button} mt-5`} onClick={() => indexMutation.mutate(repo.id)} disabled={indexMutation.isPending}>
               <Sparkles className="size-4" /> Index now

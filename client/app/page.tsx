@@ -54,7 +54,7 @@ export default function HomePage() {
             </h1>
             <p className="mx-auto mt-6 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg">
               Paste a public repository. DevPilot reads it once, then answers your questions with links to
-              the exact lines. Bring your own OpenAI or Gemini key.
+              the exact lines. Free to use, no sign-up, no key to paste.
             </p>
             <div className="mx-auto mt-8 max-w-xl text-left">
               <AddPublicRepo variant="hero" />
@@ -79,13 +79,13 @@ export default function HomePage() {
           <div className="mt-10 flex flex-col items-start justify-between gap-4 rounded-xl border border-dashed p-6 sm:flex-row sm:items-center">
             <div>
               <p className="font-medium">Already added a repo?</p>
-              <p className="text-sm text-muted-foreground">Every repo anyone indexed is listed, ready to chat.</p>
+              <p className="text-sm text-muted-foreground">Your repos stay in this browser, ready to chat.</p>
             </div>
             <Link
               href="/dashboard"
               className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3.5 py-2 text-sm font-medium text-background hover:opacity-90"
             >
-              Browse repos <ArrowRight className="size-4" />
+              Your repos <ArrowRight className="size-4" />
             </Link>
           </div>
         </section>

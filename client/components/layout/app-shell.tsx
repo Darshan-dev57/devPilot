@@ -19,7 +19,6 @@ export function BrandMark({ className }: { className?: string }) {
 
 const NAV = [
   { href: "/dashboard", label: "Repos" },
-  { href: "/dashboard/settings", label: "Settings" },
 ];
 
 export function SiteHeader({ className, wide = false }: { className?: string; wide?: boolean }) {
