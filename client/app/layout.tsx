@@ -19,6 +19,9 @@ export const metadata: Metadata = {
   title: "DevPilot: chat with any GitHub repo",
   description:
     "Paste a public GitHub repository, index it once, and ask questions. Answers stream in with links to the exact lines of code.",
+  applicationName: "DevPilot",
+  // app/favicon.ico, app/icon.svg and app/apple-icon.png are picked up by Next itself.
+  manifest: "/manifest.webmanifest",
 };
 
 export const viewport: Viewport = {

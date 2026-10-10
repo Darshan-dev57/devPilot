@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, GitCommitHorizontal, Layers, MessageSquareText } from "lucide-react";
 
 import { AddPublicRepo } from "@/components/dashboard/add-public-repo";
+import { DevPilotIcon } from "@/components/icons/devpilot-icon";
 import { BrandMark } from "@/components/layout/app-shell";
 import { FlipText } from "@/components/obsidian/flip-text";
 import { ModeToggle } from "@/components/ui/mode-toggle";
@@ -41,6 +42,7 @@ export default function HomePage() {
         <section className="relative overflow-hidden">
           <div className="paper-grid pointer-events-none absolute inset-0 opacity-70" aria-hidden />
           <div className="relative mx-auto max-w-3xl px-4 pt-14 pb-16 text-center sm:px-6 sm:pt-24 sm:pb-20">
+            <DevPilotIcon className="mx-auto mb-6 size-14 rounded-[14px] shadow-sm" />
             <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
               Spring Boot · pgvector · RAG
             </p>

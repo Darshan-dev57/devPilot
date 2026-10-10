@@ -1,4 +1,6 @@
-# DevPilot
+<p align="center"><img src="docs/logo.svg" width="72" alt="DevPilot logo: code brackets around a compass needle"></p>
+
+<h1 align="center">DevPilot</h1>
 
 Ask any public GitHub repo how it works. Paste a link, DevPilot reads the code once, and you chat with it: answers stream in word by word, and every source is a link to the exact lines on GitHub.
 

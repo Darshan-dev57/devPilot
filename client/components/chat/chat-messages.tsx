@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { DevPilotIcon } from "@/components/icons/devpilot-icon";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { CitationChips } from "@/components/chat/citation-chips";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -104,9 +105,7 @@ function UserBubble({ text }: { text: string }) {
 function AssistantBlock({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-primary font-mono text-[10px] font-semibold text-primary-foreground">
-        dp
-      </span>
+      <DevPilotIcon className="mt-0.5 size-6" />
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
