@@ -1,13 +1,19 @@
 package devPilot.backend.services.ai;
 
 /**
- * AI backends the server can use. Each gets its own vector table because embedding
- * dimensions differ (OpenAI 1536, Gemini 768, Ollama's nomic-embed-text 768).
+ * AI backends the server can use. Each embedding provider gets its own vector table
+ * because embedding dimensions differ (OpenAI 1536, Gemini 768, Ollama's nomic-embed-text
+ * 768). OpenCode Zen is chat only: it has no embeddings endpoint.
  */
 public enum AiProvider {
     GEMINI,
     OPENAI,
-    OLLAMA;
+    OLLAMA,
+    OPENCODE;
+
+    public boolean embeds() {
+        return this != OPENCODE;
+    }
 
     public static AiProvider parse(String value) {
         if (value == null || value.isBlank()) {
@@ -16,7 +22,7 @@ public enum AiProvider {
         try {
             return AiProvider.valueOf(value.trim().toUpperCase());
         } catch (IllegalArgumentException ex) {
-            throw new IllegalStateException("Unknown AI provider: " + value + " (use gemini, openai or ollama)");
+            throw new IllegalStateException("Unknown AI provider: " + value + " (use gemini, openai, ollama or opencode)");
         }
     }
 
@@ -29,6 +35,7 @@ public enum AiProvider {
             case GEMINI -> "Gemini";
             case OPENAI -> "OpenAI";
             case OLLAMA -> "Ollama";
+            case OPENCODE -> "OpenCode Zen";
         };
     }
 }

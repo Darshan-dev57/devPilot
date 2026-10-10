@@ -24,7 +24,7 @@ public class UsageController {
     @GetMapping
     public UsageResponse usage(@RequestHeader(Visitors.HEADER) String visitor) {
         UsageLimiter.Usage usage = usageLimiter.usage(Visitors.parse(visitor));
-        var provider = aiKeyResolver.provider();
+        var provider = aiKeyResolver.chatProvider();
         return new UsageResponse(provider.label(), aiModelFactory.chatModelName(provider), aiKeyResolver.configured(),
                 usage.questionsLeft(), usage.questionsPerDay(), usage.indexesLeft(), usage.indexesPerDay());
     }

@@ -34,4 +34,27 @@ class AiKeyResolverTest {
                 .isInstanceOf(ServiceUnavailableException.class)
                 .hasMessageContaining("GEMINI_API_KEY");
     }
+
+    @Test
+    void openCodeAnswersWhileGeminiEmbeds() {
+        var resolver = new AiKeyResolver("AIza-test", "", "zen-key", "opencode", "");
+        assertThat(resolver.requireKey().provider()).isEqualTo(AiProvider.GEMINI);
+        assertThat(resolver.requireChatKey()).isEqualTo(new AiKeyResolver.UserAiKey(AiProvider.OPENCODE, "zen-key"));
+        assertThat(resolver.configured()).isTrue();
+    }
+
+    @Test
+    void openCodeWithoutItsKeyIsAClearServiceError() {
+        var resolver = new AiKeyResolver("AIza-test", "", "", "opencode", "");
+        assertThat(resolver.configured()).isFalse();
+        assertThatThrownBy(resolver::requireChatKey).hasMessageContaining("OPENCODE_API_KEY");
+    }
+
+    @Test
+    void openCodeCanEmbedWithOllamaLocally() {
+        var resolver = new AiKeyResolver("", "", "zen-key", "opencode", "ollama");
+        assertThat(resolver.requireKey().provider()).isEqualTo(AiProvider.OLLAMA);
+        assertThatThrownBy(() -> new AiKeyResolver("", "", "zen-key", "opencode", "opencode").provider())
+                .hasMessageContaining("no embeddings");
+    }
 }

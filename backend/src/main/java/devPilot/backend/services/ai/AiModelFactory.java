@@ -70,6 +70,11 @@ public class AiModelFactory {
     @Value("${app.ai.ollama.embedding-dimensions:768}")
     private int ollamaEmbeddingDimensions;
 
+    @Value("${app.ai.opencode.base-url:https://opencode.ai/zen/v1}")
+    private String opencodeBaseUrl;
+    @Value("${app.ai.opencode.chat-model:longcat-2.5-preview-free}")
+    private String opencodeChatModel;
+
     @Value("${app.ai.retry-base-delay-ms:2000}")
     private long retryBaseDelayMs;
 
@@ -84,6 +89,19 @@ public class AiModelFactory {
 
     public ChatModel chatModel(AiProvider provider, String apiKey) {
         return chatModels.computeIfAbsent(provider.name(), k -> buildChatModel(provider, apiKey));
+    }
+
+    /**
+     * The model that writes answers. When chat runs on OpenCode Zen, the embedding
+     * provider's own chat model stands by in case the free model has been withdrawn.
+     */
+    public ChatModel answerModel(AiKeyResolver.UserAiKey chatKey, AiKeyResolver.UserAiKey embeddingKey) {
+        ChatModel primary = chatModel(chatKey.provider(), chatKey.apiKey());
+        if (chatKey.provider() == embeddingKey.provider()) {
+            return primary;
+        }
+        return new FallbackChatModel(primary, chatModel(embeddingKey.provider(), embeddingKey.apiKey()),
+                chatKey.provider().label() + " model " + chatModelName(chatKey.provider()));
     }
 
     public VectorStore vectorStore(AiProvider provider, String apiKey) {
@@ -107,6 +125,7 @@ public class AiModelFactory {
             case GEMINI -> geminiChatModel;
             case OPENAI -> openaiChatModel;
             case OLLAMA -> ollamaChatModel;
+            case OPENCODE -> opencodeChatModel;
         };
     }
 
@@ -119,6 +138,7 @@ public class AiModelFactory {
             case GEMINI -> geminiEmbeddingDimensions;
             case OPENAI -> openaiEmbeddingDimensions;
             case OLLAMA -> ollamaEmbeddingDimensions;
+            case OPENCODE -> throw new IllegalStateException("OpenCode Zen has no embeddings");
         };
     }
 
@@ -130,6 +150,7 @@ public class AiModelFactory {
             case OPENAI -> openAiEmbedding(openaiBaseUrl, apiKey, openaiEmbeddingModel, openaiEmbeddingDimensions, true);
             case OLLAMA -> openAiEmbedding(ollamaBaseUrl + "/v1", "ollama", ollamaEmbeddingModel,
                     ollamaEmbeddingDimensions, false);
+            case OPENCODE -> throw new IllegalStateException("OpenCode Zen has no embeddings");
         };
         return new RetryingEmbeddingModel(model, retryBaseDelayMs, 8);
     }
@@ -140,6 +161,7 @@ public class AiModelFactory {
             case GEMINI -> new GeminiChatModel(geminiBaseUrl, geminiChatModel, apiKey, geminiKeyHeader);
             case OPENAI -> openAiChat(openaiBaseUrl, apiKey, openaiChatModel);
             case OLLAMA -> openAiChat(ollamaBaseUrl + "/v1", "ollama", ollamaChatModel);
+            case OPENCODE -> openAiChat(opencodeBaseUrl, apiKey, opencodeChatModel);
         };
     }
 
