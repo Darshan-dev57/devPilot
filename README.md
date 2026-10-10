@@ -98,7 +98,7 @@ flowchart LR
   B["Browser<br/>Next.js"] -- "REST + SSE<br/>X-Visitor-Id" --> API["Spring Boot API"]
   API -- "one zip per commit,<br/>compare for changes" --> GH["GitHub API"]
   API -- "chunks + vectors,<br/>repos, chats, usage" --> PG[("Postgres + pgvector")]
-  API -- "embeddings<br/>(indexing + search)" --> EMB["Gemini embeddings"]
+  API -- "embeddings<br/>(indexing + search)" --> EMB["Gemini embeddings<br/>(OpenAI embeddings for an OpenAI-only visitor)"]
   API -- "streamed answers<br/>server key or visitor key" --> CHAT["Chat provider<br/>Gemini / OpenAI / Claude / OpenCode Zen"]
 ```
 
@@ -174,7 +174,9 @@ When a visitor hits the daily limit, or any time, the "Use your own key" button 
 
 - **Keys live only in the browser.** They are kept in the visitor's localStorage and sent as headers on that visitor's own requests (`X-Chat-Provider`, `X-Chat-Key`, `X-Chat-Model`, and `X-Gemini-Key` for a Gemini key). The server builds a model for that one request and drops it. It never stores or logs a key; a test checks that no key reaches the database.
 - **No daily question limit** on a visitor's own chat key.
-- **Indexing always uses Gemini embeddings**, so a repo indexed once stays searchable for everyone. With a Gemini key, indexing uses that key. With an OpenAI, Claude or OpenCode key, indexing uses the visitor's optional Gemini key if they add one, otherwise the free server key (which counts toward the daily index limit). The panel says so.
+- **Indexing uses Gemini embeddings when any Gemini key is available**, so a repo indexed once stays searchable for everyone. With a Gemini key, indexing uses that key. With an OpenAI, Claude or OpenCode key, indexing uses the visitor's optional Gemini key if they add one, otherwise the free server key (which counts toward the daily index limit). The panel says so.
+- **An OpenAI key can index on its own.** When the server has no key and the visitor has no Gemini key, their OpenAI key indexes with OpenAI embeddings (`text-embedding-3-small`) into the OpenAI vector table. Each repo records which table its index is in, and questions are always searched there, so the two kinds of vectors never mix. Indexing the repo again with a Gemini key moves it to the Gemini table and deletes the OpenAI vectors. A visitor who can't search a repo's table is told which key to add.
+- Claude and OpenCode have no embeddings. With only one of those and no server key, the banner and the panel ask for a free Gemini key for indexing.
 - **OpenCode needs a paid key.** OpenCode Zen's free models only work inside the OpenCode app: called from a server, Zen answers `403 FreeTierError` "OpenCode's free tier can only be used from within OpenCode". DevPilot shows that as one plain sentence.
 - Bad keys, an empty balance and a wrong model name each come back as one plain sentence too, per provider.
 
