@@ -27,7 +27,7 @@ export function IndexErrorAlert({ message }: { message: string }) {
   return (
     <Alert
       variant="destructive"
-      className="border-dashed border-destructive/30 bg-destructive/5 px-3 py-2.5"
+      className="border-destructive/25 bg-destructive/5 px-3 py-2.5"
     >
       <AlertCircle className="size-4" />
       <AlertTitle className="text-xs font-semibold">Indexing failed</AlertTitle>

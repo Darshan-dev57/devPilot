@@ -1,120 +1,83 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FolderGit2 } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { DashboardHeader } from "@/components/dashboard/dashboard-header";
-import { RepoCard } from "@/components/dashboard/repo-card";
-import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
 import { AddPublicRepo } from "@/components/dashboard/add-public-repo";
+import { RepoCard } from "@/components/dashboard/repo-card";
 import { ApiKeyBanner } from "@/components/api-key-banner";
-import { useRefreshRepos, useRepos } from "@/hooks/use-repos";
-import { getStoredApiKey } from "@/lib/api";
-import type { IndexStatus } from "@/lib/api";
-
-type FilterStatus = "ALL" | IndexStatus;
+import { Skeleton } from "@/components/ui/skeleton";
+import { useRepos } from "@/hooks/use-repos";
 
 export function RepoDashboard() {
   const reposQuery = useRepos();
-  const refresh = useRefreshRepos();
-  const hasKey = getStoredApiKey().length > 0;
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<FilterStatus>("ALL");
-  const [visibility, setVisibility] = useState<"all" | "public" | "private">(
-    "all"
-  );
+  const repos = useMemo(() => reposQuery.data ?? [], [reposQuery.data]);
 
   const filtered = useMemo(() => {
-    const list = reposQuery.data ?? [];
     const q = search.trim().toLowerCase();
-
-    return list.filter((repo) => {
-      if (status !== "ALL" && repo.indexStatus !== status) return false;
-      if (visibility === "private" && !repo.isPrivate) return false;
-      if (visibility === "public" && repo.isPrivate) return false;
-      if (!q) return true;
-      return (
+    if (!q) return repos;
+    return repos.filter(
+      (repo) =>
         repo.fullName.toLowerCase().includes(q) ||
         (repo.description ?? "").toLowerCase().includes(q) ||
         (repo.language ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [reposQuery.data, search, status, visibility]);
+    );
+  }, [repos, search]);
 
-  const readyCount =
-    reposQuery.data?.filter((r) => r.indexStatus === "READY").length ?? 0;
+  const ready = repos.filter((r) => r.indexStatus === "READY").length;
+  const indexing = repos.filter((r) => r.indexStatus === "INDEXING").length;
 
   return (
-    <div className="flex min-h-full flex-col">
-      <DashboardHeader
-        search={search}
-        onSearchChange={setSearch}
-        visibility={visibility}
-        onVisibilityChange={setVisibility}
-        status={status}
-        onStatusChange={setStatus}
-        totalCount={reposQuery.data?.length}
-        readyCount={readyCount}
-        onSync={() => refresh.mutate()}
-        isSyncing={refresh.isPending || reposQuery.isFetching}
-      />
-
-      <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-        {!hasKey && <ApiKeyBanner />}
-        <AddPublicRepo />
-        {reposQuery.isLoading && (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-64 rounded-2xl" />
-            ))}
-          </div>
-        )}
-
-        {reposQuery.isError && (
-          <Empty className="border border-dashed">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <FolderGit2 />
-              </EmptyMedia>
-              <EmptyTitle>Couldn’t load repositories</EmptyTitle>
-              <EmptyDescription>
-                {(reposQuery.error as Error).message}
-              </EmptyDescription>
-            </EmptyHeader>
-            <Button onClick={() => void reposQuery.refetch()}>Try again</Button>
-          </Empty>
-        )}
-
-        {reposQuery.isSuccess && filtered.length === 0 && (
-          <Empty className="border border-dashed">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <FolderGit2 />
-              </EmptyMedia>
-              <EmptyTitle>No repositories match</EmptyTitle>
-              <EmptyDescription>
-                Try clearing filters or syncing again.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
-
-        {reposQuery.isSuccess && filtered.length > 0 && (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((repo) => (
-              <RepoCard key={repo.id} repo={repo} />
-            ))}
-          </div>
-        )}
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Repos</h1>
+        <p className="text-sm text-muted-foreground">
+          {reposQuery.isLoading
+            ? "Loading…"
+            : `${repos.length} added · ${ready} ready to chat${indexing ? ` · ${indexing} indexing now` : ""}`}
+        </p>
       </div>
+
+      <div className="mt-6 grid gap-4">
+        <ApiKeyBanner />
+        <AddPublicRepo />
+      </div>
+
+      {repos.length > 4 && (
+        <label className="mt-8 flex items-center gap-2 border-b pb-2 text-sm">
+          <Search className="size-4 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter by name, language or description"
+            className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+          />
+        </label>
+      )}
+
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {reposQuery.isLoading &&
+          Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-xl" />)}
+        {filtered.map((repo) => (
+          <RepoCard key={repo.id} repo={repo} />
+        ))}
+      </div>
+
+      {reposQuery.isError && (
+        <p className="mt-6 rounded-xl border border-destructive/30 p-4 text-sm text-destructive">
+          Could not reach the DevPilot server. {(reposQuery.error as Error).message}
+        </p>
+      )}
+      {!reposQuery.isLoading && !reposQuery.isError && repos.length === 0 && (
+        <div className="mt-6 rounded-xl border border-dashed p-10 text-center">
+          <p className="font-medium">No repos yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Paste one above. Small repos index in seconds.</p>
+        </div>
+      )}
+      {repos.length > 0 && filtered.length === 0 && (
+        <p className="mt-6 text-sm text-muted-foreground">Nothing matches “{search}”.</p>
+      )}
     </div>
   );
 }
