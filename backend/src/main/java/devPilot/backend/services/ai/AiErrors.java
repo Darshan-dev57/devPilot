@@ -43,6 +43,7 @@ public final class AiErrors {
                 return "Your " + name + " key hit its rate limit. Wait a minute and try again.";
             }
             if (lower.contains("perday") || lower.contains("per day") || lower.contains("daily")) {
+                // DailyQuotaException says "daily quota"; Google's per-day quota ids say PerDay.
                 return "The free " + name + " quota for today is used up. Please try again tomorrow.";
             }
             return "The free " + name + " quota is busy right now. Wait a minute and try again.";

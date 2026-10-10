@@ -38,16 +38,31 @@ class RetryingEmbeddingModelTest {
     void indexJobsWaitAndCarryOn() {
         AtomicInteger calls = new AtomicInteger();
         List<String> phases = new ArrayList<>();
-        var model = new RetryingEmbeddingModel(failing(calls, 3), 1, 8);
+        var model = new RetryingEmbeddingModel(new Fake(calls, 3, new RuntimeException("429 Please retry in 0.001s")), 1, 8);
         RetryingEmbeddingModel.WAIT_LISTENER.set(phases::add);
         try {
-            // waitMs would honour "retry in Ns"; this fake says nothing, so the 1 ms base applies.
             assertThat(model.call(new EmbeddingRequest(List.of("a"), null)).getResults()).hasSize(1);
         } finally {
             RetryingEmbeddingModel.WAIT_LISTENER.remove();
         }
         assertThat(calls.get()).isEqualTo(4);
         assertThat(phases).hasSize(3).allMatch(p -> p.contains("free per-minute limit"));
+    }
+
+    @Test
+    void aBare429ThatKeepsComingIsTheDailyQuota() {
+        AtomicInteger calls = new AtomicInteger();
+        var model = new RetryingEmbeddingModel(new Fake(calls, 99, new RuntimeException("429 RESOURCE_EXHAUSTED You exceeded your current quota")), 1, 8);
+        RetryingEmbeddingModel.WAIT_LISTENER.set(p -> { });
+        try {
+            assertThatThrownBy(() -> model.call(new EmbeddingRequest(List.of("a"), null)))
+                    .isInstanceOf(RetryingEmbeddingModel.DailyQuotaException.class)
+                    .satisfies(e -> assertThat(AiErrors.describe(e, AiProvider.GEMINI))
+                            .isEqualTo("The free Gemini quota for today is used up. Please try again tomorrow."));
+        } finally {
+            RetryingEmbeddingModel.WAIT_LISTENER.remove();
+        }
+        assertThat(calls.get()).isEqualTo(4);
     }
 
     @Test
