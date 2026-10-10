@@ -17,10 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 import devPilot.backend.dto.AddPublicRepoRequest;
 import devPilot.backend.dto.IndexStatusResponse;
 import devPilot.backend.dto.RepositoryResponse;
+import devPilot.backend.entity.IndexStatus;
 import devPilot.backend.entity.Repository;
 import devPilot.backend.services.RepoService;
 import devPilot.backend.services.Visitors;
 import devPilot.backend.services.indexing.IndexingService;
+import devPilot.backend.services.limits.UsageLimiter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -35,6 +37,7 @@ public class RepoController {
 
     private final RepoService repoService;
     private final IndexingService indexingService;
+    private final UsageLimiter usageLimiter;
 
     @GetMapping
     public List<RepositoryResponse> list(@RequestHeader(Visitors.HEADER) String visitor) {
@@ -64,12 +67,22 @@ public class RepoController {
     @PostMapping("/{id}/index")
     public ResponseEntity<RepositoryResponse> index(
             @PathVariable UUID id,
-            @RequestHeader(Visitors.HEADER) String visitor,
-            @RequestHeader("X-Api-Key") String apiKey,
-            @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
-        repoService.requireVisible(id, Visitors.parse(visitor));
-        Repository repo = indexingService.startIndexing(id, apiKey, provider);
-        indexingService.indexAsync(id, apiKey, provider);
+            @RequestHeader(Visitors.HEADER) String visitor) {
+        UUID visitorId = Visitors.parse(visitor);
+        Repository current = repoService.requireVisible(id, visitorId);
+        // Repos are shared. If someone else is already indexing this one, just follow along.
+        if (current.getIndexStatus() == IndexStatus.INDEXING) {
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(current));
+        }
+        usageLimiter.consume(visitorId, UsageLimiter.Kind.INDEX);
+        Repository repo;
+        try {
+            repo = indexingService.startIndexing(id);
+        } catch (RuntimeException ex) {
+            usageLimiter.refund(visitorId, UsageLimiter.Kind.INDEX);
+            throw ex;
+        }
+        indexingService.indexAsync(id);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
@@ -84,12 +97,10 @@ public class RepoController {
     @PostMapping("/{id}/resume-index")
     public ResponseEntity<RepositoryResponse> resumeIndex(
             @PathVariable UUID id,
-            @RequestHeader(Visitors.HEADER) String visitor,
-            @RequestHeader("X-Api-Key") String apiKey,
-            @RequestHeader(name = "X-AI-Provider", required = false) String provider) {
+            @RequestHeader(Visitors.HEADER) String visitor) {
         repoService.requireVisible(id, Visitors.parse(visitor));
-        Repository repo = indexingService.resumeIndexing(id, apiKey, provider);
-        indexingService.resumeAsync(id, apiKey, provider);
+        Repository repo = indexingService.resumeIndexing(id);
+        indexingService.resumeAsync(id);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 

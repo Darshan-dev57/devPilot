@@ -27,6 +27,8 @@ import devPilot.backend.services.ai.ChatPromptBuilder;
 import devPilot.backend.services.ai.ChatStreamHandler;
 import devPilot.backend.services.ai.CitationMapper;
 import devPilot.backend.services.ai.CodeContextRetriever;
+import devPilot.backend.exceptions.TooManyRequestsException;
+import devPilot.backend.services.limits.UsageLimiter;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -42,6 +44,9 @@ public class ChatService {
     private final CitationMapper citationMapper;
     private final AiKeyResolver aiKeyResolver;
     private final AiModelFactory aiModelFactory;
+    private final UsageLimiter usageLimiter;
+
+    static final int MAX_QUESTION_CHARS = 4000;
 
     @Transactional
     public ChatSessionResponse createSession(CreateChatSessionRequest request, UUID visitorId) {
@@ -88,20 +93,23 @@ public class ChatService {
                 .orElseThrow(() -> new NotFoundException("Chat session not found"));
     }
 
-    public SseEmitter streamReply(UUID sessionId, UUID visitorId, String userContent, String apiKey, String provider) {
+    public SseEmitter streamReply(UUID sessionId, UUID visitorId, String userContent) {
         ChatSession session = requireSession(sessionId, visitorId);
         Repository repo = repoService.requireVisible(session.getRepositoryId(), visitorId);
         if (repo.getIndexStatus() != IndexStatus.READY) {
             throw new BadRequestException("Repository is not ready for chat");
         }
 
-        var userKey = aiKeyResolver.requireKey(apiKey, provider);
+        if (userContent.length() > MAX_QUESTION_CHARS) {
+            throw new BadRequestException("That question is too long. Keep it under " + MAX_QUESTION_CHARS + " characters.");
+        }
+        var userKey = aiKeyResolver.requireKey();
         // Vectors from one provider's embedding model cannot be searched with another's.
         if (repo.getEmbeddingProvider() != null && !repo.getEmbeddingProvider().equals(userKey.provider().name())) {
             throw new BadRequestException("This repo was indexed with " + label(repo.getEmbeddingProvider())
-                    + ". Switch to " + label(repo.getEmbeddingProvider()) + " in Settings, or re-index it with your "
-                    + label(userKey.provider().name()) + " key.");
+                    + ", but the server now uses " + label(userKey.provider().name()) + ". Re-index it to keep chatting.");
         }
+        usageLimiter.consume(visitorId, UsageLimiter.Kind.QUESTION);
 
         List<ChatMessage> history = recentHistory(session.getId());
         ChatMessage userMessage = chatMessageRepository.save(ChatMessage.builder()
@@ -115,7 +123,12 @@ public class ChatService {
             var userVectorStore = aiModelFactory.vectorStore(userKey.provider(), userKey.apiKey());
             retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
         } catch (RuntimeException ex) {
-            throw new BadRequestException(AiErrors.describe(ex, userKey.provider()));
+            chatMessageRepository.delete(userMessage);
+            String message = AiErrors.describe(ex, userKey.provider());
+            if (AiErrors.isRateLimit(ex)) {
+                throw new TooManyRequestsException(message);
+            }
+            throw new BadRequestException(message);
         }
 
         String systemPrompt = chatPromptBuilder.systemPrompt(repo.getFullName());

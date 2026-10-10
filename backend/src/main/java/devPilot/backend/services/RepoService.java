@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
 import devPilot.backend.dto.IndexStatusResponse;
@@ -39,6 +40,10 @@ public class RepoService {
     private final JdbcTemplate jdbcTemplate;
     private final GithubApiClient gitHubApiClient;
 
+    /** GitHub reports a repo's size in KB. Big repos would burn the free AI quota. */
+    @Value("${app.limits.max-repo-mb:60}")
+    private long maxRepoMb;
+
     /**
      * Adds a repository for chat, or returns the existing row if it is already stored.
      *
@@ -66,6 +71,11 @@ public class RepoService {
         if (Boolean.TRUE.equals(remote.get("private"))) {
             throw new GitHubException(GitHubException.Kind.PRIVATE_REPO,
                     "That repository is private. DevPilot only works with public repos.");
+        }
+        Long sizeKb = remote.get("size") instanceof Number n ? n.longValue() : null;
+        if (maxRepoMb > 0 && sizeKb != null && sizeKb > maxRepoMb * 1024) {
+            throw new BadRequestException("That repo is about " + (sizeKb / 1024) + " MB. The free server takes repos up to "
+                    + maxRepoMb + " MB.");
         }
         Long githubRepoId = toLong(remote.get("id"));
         return repositoryRepository.findByGithubRepoId(githubRepoId)
