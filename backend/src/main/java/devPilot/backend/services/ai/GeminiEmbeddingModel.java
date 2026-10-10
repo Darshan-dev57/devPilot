@@ -24,11 +24,13 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
 
     private final String apiKey;
     private final String baseUrl;
+    private final String keyHeader;
     private final String model;
     private final RestClient restClient;
 
-    public GeminiEmbeddingModel(String apiKey, String baseUrl, String model, int dimensions, RestClient restClient) {
+    public GeminiEmbeddingModel(String apiKey, String baseUrl, String keyHeader, String model, int dimensions, RestClient restClient) {
         this.apiKey = apiKey;
+        this.keyHeader = keyHeader;
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.model = model;
         this.restClient = restClient;
@@ -48,7 +50,7 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
 
         Map<String, Object> response = restClient.post()
                 .uri(baseUrl + EMBED_PATH.formatted(model))
-                .header("x-goog-api-key", apiKey)
+                .header(keyHeader, apiKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("requests", requests))
                 .retrieve()
