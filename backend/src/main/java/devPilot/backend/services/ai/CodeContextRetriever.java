@@ -1,7 +1,10 @@
 package devPilot.backend.services.ai;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -9,6 +12,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Service;
 
+import devPilot.backend.dto.CitationDto;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -19,8 +23,8 @@ public class CodeContextRetriever {
     private final CitationMapper citationMapper;
 
     /**
-     * Retrieval scoped to a caller-supplied store, e.g. a per-request BYOK store.
-     * No VectorStore field — stores are built per-request in AiModelFactory.
+     * Finds the chunks most similar to the question, scoped to one repository.
+     * Stores are built per request in AiModelFactory (each visitor brings their own key).
      */
     public RetrievedContext retrieve(VectorStore store, UUID repositoryId, String question) {
         var filter = new FilterExpressionBuilder()
@@ -33,21 +37,44 @@ public class CodeContextRetriever {
                 .filterExpression(filter)
                 .build();
 
-        var documents = store.similaritySearch(search);
+        List<Document> documents = store.similaritySearch(search);
+        return build(documents);
+    }
 
-        var citations = documents.stream()
-                .map(citationMapper::fromDocument)
-                .distinct()
-                .toList();
-
-        var contextText = documents.stream()
-                .map(Document::getText)
-                .collect(Collectors.joining("\n\n---\n\n"));
-
-        if (contextText.isBlank()) {
-            contextText = NO_MATCHES;
+    /** Visible for tests: turns ranked chunks into prompt context and citation chips. */
+    RetrievedContext build(List<Document> documents) {
+        // One chip per file, best match first, line range widened to cover every hit in it.
+        Map<String, CitationDto> byFile = new LinkedHashMap<>();
+        for (Document document : documents) {
+            CitationDto citation = citationMapper.fromDocument(document);
+            if (citation.filePath() == null) {
+                continue;
+            }
+            byFile.merge(citation.filePath(), citation, CodeContextRetriever::widen);
         }
+        List<CitationDto> citations = new ArrayList<>(byFile.values());
 
-        return new RetrievedContext(citations, contextText);
+        StringBuilder context = new StringBuilder();
+        for (Document document : documents) {
+            if (document.getText() == null || document.getText().isBlank()) {
+                continue;
+            }
+            if (!context.isEmpty()) {
+                context.append("\n\n---\n\n");
+            }
+            context.append(document.getText());
+        }
+        return new RetrievedContext(citations, context.isEmpty() ? NO_MATCHES : context.toString());
+    }
+
+    private static CitationDto widen(CitationDto a, CitationDto b) {
+        if (a.startLine() == null || b.startLine() == null) {
+            return a;
+        }
+        return new CitationDto(a.filePath(),
+                Math.min(a.startLine(), b.startLine()),
+                Math.max(a.endLine() == null ? a.startLine() : a.endLine(),
+                        b.endLine() == null ? b.startLine() : b.endLine()),
+                a.language());
     }
 }
