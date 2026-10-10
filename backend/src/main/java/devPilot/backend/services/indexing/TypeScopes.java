@@ -82,7 +82,8 @@ final class TypeScopes {
 
     /**
      * Label for a chunk covering lines [start, end): the type its first declaration belongs
-     * to. A chunk that opens with a type declaration is labelled with that type.
+     * to. A chunk that opens with a type declaration is labelled with that type, unless the
+     * type opens and closes on that one line.
      */
     String labelFor(int start, int end) {
         int last = Math.min(end, codeLines.length);
@@ -92,7 +93,14 @@ final class TypeScopes {
                 continue;
             }
             String declared = typeDeclaredBy(code);
-            return declared != null ? declared : enclosingTypeAt(i);
+            if (declared == null) {
+                return enclosingTypeAt(i);
+            }
+            boolean closedOnThisLine = code.contains("{") && !declared.equals(enclosingTypeAt(i + 1));
+            if (!closedOnThisLine) {
+                return declared;
+            }
+            // A one-line type such as "static class Marker {}": label by what comes after it.
         }
         return enclosingTypeAt(start);
     }

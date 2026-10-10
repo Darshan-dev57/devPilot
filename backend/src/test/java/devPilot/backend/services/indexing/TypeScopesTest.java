@@ -191,7 +191,10 @@ class TypeScopesTest {
 
         assertThat(typeAt(source, "java", "double gravity()")).isEqualTo("enum Planet");
         assertThat(typeAt(source, "java", "EARTH(")).isEqualTo("enum Planet");
-        assertThat(scopes.labelFor(lineOf(lines, "enum Unit"), lines.length)).isEqualTo("enum Unit");
+        // A one-line nested enum does not take over the label of the code after it.
+        assertThat(scopes.labelFor(lineOf(lines, "enum Unit"), lines.length)).isEqualTo("enum Planet");
+        assertThat(scopes.labelFor(lineOf(lines, "enum Unit"), lineOf(lines, "enum Unit") + 1))
+                .isEqualTo("enum Planet");
         assertThat(typeAt(source, "java", "double inKg()")).isEqualTo("enum Planet");
         assertThat(typeAt(source, "java", "void x()")).isEqualTo("class Other");
     }
@@ -271,6 +274,32 @@ class TypeScopesTest {
         assertThat(typeAt(source, "py", "def a(self)")).isEqualTo("class Inner");
         assertThat(typeAt(source, "py", "def b(self)")).isEqualTo("class Outer");
         assertThat(typeAt(source, "py", "def free()")).isNull();
+    }
+
+    @Test
+    void bracesOnTheirOwnLineAndOneLineTypes() {
+        String source = """
+                public class Outer
+                {
+                  static class Marker {}
+
+                  public void after()
+                  {
+                  }
+
+                  static class Inner
+                  {
+                    void inside() {}
+                  }
+                }
+                """;
+        String[] lines = lines(source);
+        TypeScopes scopes = TypeScopes.of(lines, "java");
+
+        assertThat(scopes.labelFor(lineOf(lines, "static class Marker"), lines.length)).isEqualTo("class Outer");
+        assertThat(scopes.labelFor(lineOf(lines, "static class Inner"), lines.length)).isEqualTo("class Inner");
+        assertThat(typeAt(source, "java", "public void after()")).isEqualTo("class Outer");
+        assertThat(typeAt(source, "java", "void inside()")).isEqualTo("class Inner");
     }
 
     @Test
