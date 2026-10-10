@@ -32,6 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ChatStreamHandler {
 
+    static final String CUT_OFF_NOTE = "\n\n_(This answer was cut off by an error.)_";
+
     private final ChatMessageRepository chatMessageRepository;
     private final CitationMapper citationMapper;
     private final JsonMapper jsonMapper;
@@ -80,6 +82,7 @@ public class ChatStreamHandler {
                             token -> appendToken(emitter, fullReply, token),
                             err -> {
                                 log.warn("Chat stream error: {}", err.toString());
+                                keepHistoryWhole(sessionId, savedUserMessage, fullReply);
                                 sendErrorAndComplete(emitter, AiErrors.describe(err, provider, visitorKey));
                             },
                             () -> completeStream(emitter, sessionId, fullReply, citations));
@@ -88,10 +91,35 @@ public class ChatStreamHandler {
             emitter.onTimeout(subscription::dispose);
         } catch (Exception ex) {
             log.warn("Chat stream setup failed: {}", ex.toString());
+            keepHistoryWhole(sessionId, savedUserMessage, fullReply);
             sendErrorAndComplete(emitter, AiErrors.describe(ex, provider, visitorKey));
         }
 
         return emitter;
+    }
+
+    /**
+     * A failed answer must not leave the question alone in the chat: it would show up after a
+     * reload with no reply, and every later prompt would carry it. With nothing streamed the
+     * question is removed (the visitor sees the error and can ask again); with part of an answer
+     * streamed, that part is kept and marked as cut off.
+     */
+    private void keepHistoryWhole(UUID sessionId, ChatMessageResponse question, StringBuilder fullReply) {
+        try {
+            if (fullReply.isEmpty()) {
+                if (question != null && question.id() != null) {
+                    chatMessageRepository.deleteById(question.id());
+                }
+                return;
+            }
+            chatMessageRepository.save(ChatMessage.builder()
+                    .sessionId(sessionId)
+                    .role(MessageRole.ASSISTANT)
+                    .content(fullReply + CUT_OFF_NOTE)
+                    .build());
+        } catch (Exception ex) {
+            log.warn("Could not tidy chat history after an error: {}", ex.toString());
+        }
     }
 
     private void sendErrorAndComplete(SseEmitter emitter, String message) {

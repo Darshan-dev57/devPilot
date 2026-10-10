@@ -123,7 +123,7 @@ public class ChatService {
         RetrievedContext retrievedContext;
         try {
             var userVectorStore = aiModelFactory.vectorStore(userKey);
-            retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent);
+            retrievedContext = codeContextRetriever.retrieve(userVectorStore, repo.getId(), userContent, lastQuestion(history));
         } catch (RuntimeException ex) {
             chatMessageRepository.delete(userMessage);
             if (!chatKey.visitor()) {
@@ -148,6 +148,15 @@ public class ChatService {
                 retrievedContext.citations(),
                 systemPrompt,
                 userPrompt);
+    }
+
+    private static String lastQuestion(List<ChatMessage> history) {
+        for (int i = history.size() - 1; i >= 0; i--) {
+            if (history.get(i).getRole() == MessageRole.USER) {
+                return history.get(i).getContent();
+            }
+        }
+        return null;
     }
 
     private List<ChatMessage> recentHistory(UUID sessionId) {
