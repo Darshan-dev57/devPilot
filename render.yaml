@@ -31,7 +31,9 @@ services:
       # Create one free at github.com/settings/tokens (classic, no scopes needed for public repos).
       - key: APP_GITHUB_TOKEN
         sync: false
-      # One free Gemini key for the whole site: https://aistudio.google.com/apikey
+      # Free Gemini key for the whole site: https://aistudio.google.com/apikey
+      # Several keys work as fallbacks, comma separated: key1,key2,key3
+      # Make each key in a different Google Cloud project; free quota is per project.
       - key: GEMINI_API_KEY
         sync: false
       # Daily free limits (0 = off). See README "Free tier and limits".
