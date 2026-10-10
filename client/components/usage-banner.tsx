@@ -45,7 +45,7 @@ export function UsageBanner({ kind = "both", className }: { kind?: "both" | "que
     >
       Free today: {parts.join(" · ")} left
       {outOfQuestions || outOfIndexes ? " · resets at midnight Pacific" : ""}
-      <span> · answers by {data.model}, so don't paste secrets</span>
+      <span> · answers by {data.model}, so don&apos;t paste secrets</span>
     </p>
   );
 }
