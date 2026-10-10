@@ -1,6 +1,7 @@
 package devPilot.backend.services.ai;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.ai.chat.model.ChatModel;
@@ -25,14 +26,16 @@ import com.openai.core.http.HttpClient;
 import devPilot.backend.exceptions.ServiceUnavailableException;
 
 /**
- * Builds the chat model, embedding model and pgvector store for the server's AI provider.
+ * Builds the chat model, embedding model and pgvector store for a key.
  *
  * <ul>
  *   <li>Gemini (default): Google's native REST API with the server's GEMINI_API_KEY.</li>
  *   <li>OpenAI: Spring AI's OpenAI client with OPENAI_API_KEY.</li>
- *   <li>Ollama (local, optional): Ollama's OpenAI-compatible API at OLLAMA_URL, no key.</li>
+ *   <li>For a visitor's own key, answers can also come from Claude (Anthropic Messages
+ *       API) or OpenCode Zen (OpenAI-compatible endpoint). Both are chat only.</li>
  * </ul>
- * Models are cached per provider and key; there is one key per server.
+ * Models for the server's key are cached. Models for a visitor's key are built for one
+ * request and dropped, so a visitor's key is never kept or reused.
  */
 @Component
 public class AiModelFactory {
@@ -61,25 +64,25 @@ public class AiModelFactory {
     @Value("${app.ai.gemini.embedding-dimensions:768}")
     private int geminiEmbeddingDimensions;
 
-    @Value("${app.ai.ollama.base-url:http://localhost:11434}")
-    private String ollamaBaseUrl;
-    @Value("${app.ai.ollama.chat-model:qwen2.5-coder:1.5b}")
-    private String ollamaChatModel;
-    @Value("${app.ai.ollama.embedding-model:nomic-embed-text}")
-    private String ollamaEmbeddingModel;
-    @Value("${app.ai.ollama.embedding-dimensions:768}")
-    private int ollamaEmbeddingDimensions;
-
     @Value("${app.ai.opencode.base-url:https://opencode.ai/zen/v1}")
     private String opencodeBaseUrl;
-    @Value("${app.ai.opencode.chat-model:longcat-2.5-preview-free}")
+    @Value("${app.ai.opencode.chat-model:deepseek-v4.1-flash}")
     private String opencodeChatModel;
+
+    @Value("${app.ai.anthropic.base-url:https://api.anthropic.com}")
+    private String anthropicBaseUrl;
+    @Value("${app.ai.anthropic.chat-model:claude-sonnet-5-5}")
+    private String anthropicChatModel;
+    /** Default model when a visitor answers with their own OpenAI key. */
+    @Value("${app.ai.openai.visitor-chat-model:gpt-6-luna}")
+    private String openaiVisitorChatModel;
 
     @Value("${app.ai.retry-base-delay-ms:2000}")
     private long retryBaseDelayMs;
 
     private final Map<String, ChatModel> chatModels = new ConcurrentHashMap<>();
     private final Map<String, VectorStore> vectorStores = new ConcurrentHashMap<>();
+    private final Set<AiProvider> schemaReady = ConcurrentHashMap.newKeySet();
     private final HttpClient httpClient = SpringAiOpenAiHttpClient.builder().build();
 
     public AiModelFactory(JdbcTemplate jdbcTemplate, RestClient.Builder restClientBuilder) {
@@ -91,41 +94,69 @@ public class AiModelFactory {
         return chatModels.computeIfAbsent(provider.name(), k -> buildChatModel(provider, apiKey));
     }
 
-    /**
-     * The model that writes answers. When chat runs on OpenCode Zen, the embedding
-     * provider's own chat model stands by in case the free model has been withdrawn.
-     */
-    public ChatModel answerModel(AiKeyResolver.UserAiKey chatKey, AiKeyResolver.UserAiKey embeddingKey) {
-        ChatModel primary = chatModel(chatKey.provider(), chatKey.apiKey());
-        if (chatKey.provider() == embeddingKey.provider()) {
-            return primary;
+    /** Chat model for a key: cached for the server's key, built fresh for a visitor's. */
+    public ChatModel chatModel(AiKeyResolver.UserAiKey key) {
+        if (!key.visitor()) {
+            return chatModel(key.provider(), key.apiKey());
         }
-        return new FallbackChatModel(primary, chatModel(embeddingKey.provider(), embeddingKey.apiKey()),
-                chatKey.provider().label() + " model " + chatModelName(chatKey.provider()));
+        if (key.model() == null && key.provider() == AiProvider.GEMINI) {
+            return buildChatModel(key.provider(), key.apiKey());
+        }
+        String model = key.model() != null ? key.model() : visitorDefaultModel(key.provider());
+        return visitorChatModel(key.provider(), key.apiKey(), model);
+    }
+
+    /** The model a visitor's own key answers with when they did not pick one. */
+    public String visitorDefaultModel(AiProvider provider) {
+        return switch (provider) {
+            case GEMINI -> geminiChatModel;
+            case OPENAI -> openaiVisitorChatModel;
+            case OPENCODE -> opencodeChatModel;
+            case ANTHROPIC -> anthropicChatModel;
+        };
+    }
+
+    /** Protected so tests can swap in a fake. */
+    protected ChatModel visitorChatModel(AiProvider provider, String apiKey, String model) {
+        return switch (provider) {
+            case GEMINI -> new GeminiChatModel(geminiBaseUrl, model, apiKey, geminiKeyHeader);
+            case OPENAI -> openAiChat(openaiBaseUrl, apiKey, model);
+            case OPENCODE -> openAiChat(opencodeBaseUrl, apiKey, model);
+            case ANTHROPIC -> new ClaudeChatModel(anthropicBaseUrl, model, apiKey, 2048);
+        };
     }
 
     public VectorStore vectorStore(AiProvider provider, String apiKey) {
         return vectorStores.computeIfAbsent(provider.name(), k -> buildVectorStore(provider, apiKey));
     }
 
+    /** Vector store for a key: cached for the server's key, built fresh for a visitor's. */
+    public VectorStore vectorStore(AiKeyResolver.UserAiKey key) {
+        return key.visitor() ? buildVectorStore(key.provider(), key.apiKey()) : vectorStore(key.provider(), key.apiKey());
+    }
+
     /**
      * One tiny embedding call that proves the AI provider answers before an index job
      * starts; otherwise a broken key would only fail after old vectors were cleared.
      */
-    public void verifyKey(AiProvider provider, String apiKey) {
+    public void verifyKey(AiKeyResolver.UserAiKey key) {
         try {
-            embeddingModel(provider, apiKey).embed("ping");
+            embeddingModel(key.provider(), key.apiKey()).embed("ping");
         } catch (RuntimeException ex) {
-            throw new ServiceUnavailableException(AiErrors.describe(ex, provider));
+            throw new ServiceUnavailableException(AiErrors.describe(ex, key.provider(), key.visitor()));
         }
+    }
+
+    public void verifyKey(AiProvider provider, String apiKey) {
+        verifyKey(new AiKeyResolver.UserAiKey(provider, apiKey));
     }
 
     public String chatModelName(AiProvider provider) {
         return switch (provider) {
             case GEMINI -> geminiChatModel;
             case OPENAI -> openaiChatModel;
-            case OLLAMA -> ollamaChatModel;
             case OPENCODE -> opencodeChatModel;
+            case ANTHROPIC -> anthropicChatModel;
         };
     }
 
@@ -137,8 +168,7 @@ public class AiModelFactory {
         return switch (provider) {
             case GEMINI -> geminiEmbeddingDimensions;
             case OPENAI -> openaiEmbeddingDimensions;
-            case OLLAMA -> ollamaEmbeddingDimensions;
-            case OPENCODE -> throw new IllegalStateException("OpenCode Zen has no embeddings");
+            case OPENCODE, ANTHROPIC -> throw new IllegalStateException(provider.label() + " has no embeddings");
         };
     }
 
@@ -147,10 +177,8 @@ public class AiModelFactory {
         EmbeddingModel model = switch (provider) {
             case GEMINI -> new GeminiEmbeddingModel(apiKey, geminiBaseUrl, geminiKeyHeader, geminiEmbeddingModel,
                     geminiEmbeddingDimensions, restClientBuilder.clone().build());
-            case OPENAI -> openAiEmbedding(openaiBaseUrl, apiKey, openaiEmbeddingModel, openaiEmbeddingDimensions, true);
-            case OLLAMA -> openAiEmbedding(ollamaBaseUrl + "/v1", "ollama", ollamaEmbeddingModel,
-                    ollamaEmbeddingDimensions, false);
-            case OPENCODE -> throw new IllegalStateException("OpenCode Zen has no embeddings");
+            case OPENAI -> openAiEmbedding(openaiBaseUrl, apiKey, openaiEmbeddingModel, openaiEmbeddingDimensions);
+            case OPENCODE, ANTHROPIC -> throw new IllegalStateException(provider.label() + " has no embeddings");
         };
         return new RetryingEmbeddingModel(model, retryBaseDelayMs, 8);
     }
@@ -160,8 +188,8 @@ public class AiModelFactory {
         return switch (provider) {
             case GEMINI -> new GeminiChatModel(geminiBaseUrl, geminiChatModel, apiKey, geminiKeyHeader);
             case OPENAI -> openAiChat(openaiBaseUrl, apiKey, openaiChatModel);
-            case OLLAMA -> openAiChat(ollamaBaseUrl + "/v1", "ollama", ollamaChatModel);
             case OPENCODE -> openAiChat(opencodeBaseUrl, apiKey, opencodeChatModel);
+            case ANTHROPIC -> new ClaudeChatModel(anthropicBaseUrl, anthropicChatModel, apiKey, 2048);
         };
     }
 
@@ -180,13 +208,9 @@ public class AiModelFactory {
                 .build();
     }
 
-    private EmbeddingModel openAiEmbedding(String baseUrl, String apiKey, String model, int dimensions,
-            boolean sendDimensions) {
+    private EmbeddingModel openAiEmbedding(String baseUrl, String apiKey, String model, int dimensions) {
         OpenAiEmbeddingOptions.Builder options = OpenAiEmbeddingOptions.builder()
-                .model(model).apiKey(apiKey).baseUrl(baseUrl);
-        if (sendDimensions) {
-            options.dimensions(dimensions);
-        }
+                .model(model).apiKey(apiKey).baseUrl(baseUrl).dimensions(dimensions);
         return OpenAiEmbeddingModel.builder()
                 .openAiClient(client(baseUrl, apiKey))
                 .options(options.build())
@@ -194,10 +218,12 @@ public class AiModelFactory {
     }
 
     private VectorStore buildVectorStore(AiProvider provider, String apiKey) {
+        // The table is created once; stores built later for visitor keys skip the DDL.
+        boolean firstForProvider = schemaReady.add(provider);
         PgVectorStore store = PgVectorStore.builder(jdbcTemplate, embeddingModel(provider, apiKey))
                 .schemaName("public")
                 .vectorTableName(provider.tableName())
-                .initializeSchema(true)
+                .initializeSchema(firstForProvider)
                 .dimensions(dimensions(provider))
                 .build();
         // Manually built stores are not Spring beans, so trigger schema init explicitly.

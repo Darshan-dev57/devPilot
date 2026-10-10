@@ -86,13 +86,13 @@ public class UsageLimiter {
         String visitor = visitorId.toString();
         if (!take(day, visitor, kind, visitorLimit(kind))) {
             throw new TooManyRequestsException(kind == Kind.QUESTION
-                    ? "You've used today's " + visitorLimit(kind) + " free questions. Come back tomorrow."
-                    : "You've used today's " + visitorLimit(kind) + " free index runs. Come back tomorrow.");
+                    ? "You've used today's " + visitorLimit(kind) + " free questions. Come back tomorrow, or use your own key."
+                    : "You've used today's " + visitorLimit(kind) + " free index runs. Come back tomorrow, or use your own key.");
         }
         if (!take(day, GLOBAL, kind, globalLimit(kind))) {
             give(day, visitor, kind);
             throw new TooManyRequestsException(
-                    "DevPilot's free daily limit is used up for everyone today. Please try again tomorrow.");
+                    "DevPilot's free daily limit is used up for everyone today. Try again tomorrow, or use your own key.");
         }
     }
 

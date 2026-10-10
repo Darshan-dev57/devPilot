@@ -60,7 +60,7 @@ class UsageLimiterTest {
         }
         assertThatThrownBy(() -> limiter.consume(visitor, Kind.QUESTION))
                 .isInstanceOf(TooManyRequestsException.class)
-                .hasMessage("You've used today's 3 free questions. Come back tomorrow.");
+                .hasMessage("You've used today's 3 free questions. Come back tomorrow, or use your own key.");
         assertThat(limiter.usage(visitor).questionsLeft()).isZero();
         // Index runs are counted separately.
         limiter.consume(visitor, Kind.INDEX);
@@ -85,7 +85,7 @@ class UsageLimiterTest {
         limiter.consume(UUID.randomUUID(), Kind.QUESTION);
         UUID late = UUID.randomUUID();
         assertThatThrownBy(() -> limiter.consume(late, Kind.QUESTION))
-                .hasMessage("DevPilot's free daily limit is used up for everyone today. Please try again tomorrow.");
+                .hasMessage("DevPilot's free daily limit is used up for everyone today. Try again tomorrow, or use your own key.");
         Integer used = jdbc.queryForObject("select coalesce(sum(used), 0) from usage_counter where subject = ?",
                 Integer.class, late.toString());
         assertThat(used).isZero();

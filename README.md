@@ -4,7 +4,7 @@
 
 Ask any public GitHub repo how it works. Paste a link, DevPilot reads the code once, and you chat with it: answers stream in word by word, and every source is a link to the exact lines on GitHub.
 
-No sign-up and no key to paste. The server owner sets one free Gemini key; daily limits keep that free quota from running out.
+No sign-up and no key to paste. The server owner sets one free Gemini key, and daily limits keep that free quota from running out. Anyone who wants more can paste their own key and skip the limits.
 
 ## What you can do
 
@@ -69,11 +69,24 @@ Read these before you put a free key on a public site. From Google's [Gemini API
 
 DevPilot only indexes public repositories, and private repos are refused even if the server's GitHub token could read them. Questions visitors type are sent to Google too, so the site should say so (the frontend shows which model answers).
 
-### Other providers
+### Use your own key (optional)
 
-The same code runs on OpenAI (`AI_PROVIDER=openai`, `OPENAI_API_KEY`) or on a local Ollama (`AI_PROVIDER=ollama`). Each provider keeps its own vector table because embedding sizes differ.
+When a visitor hits the daily limit, or any time, the "Use your own key" button lets them pick who answers and paste that provider's key. The model field comes prefilled and can be changed.
 
-**OpenCode Zen for answers.** `AI_PROVIDER=opencode` with `OPENCODE_API_KEY` (sign in at opencode.ai) writes answers with an OpenCode Zen model over its OpenAI-compatible endpoint (`https://opencode.ai/zen/v1/chat/completions`, override with `OPENCODE_BASE_URL`). Zen has no embeddings endpoint, so indexing stays on Gemini (or on `AI_EMBEDDING_PROVIDER=ollama`). The default model is `longcat-2.5-preview-free`; set another with `OPENCODE_MODEL`. Zen's [docs](https://opencode.ai/docs/zen) say of it: "LongCat 2.5 Preview Free is free on OpenCode for a limited time. Its provider follows a zero-retention policy and does not use your data for model training." Because free models there are limited-time, DevPilot answers with Gemini instead if the OpenCode model fails before writing anything, and logs why. Other free models on Zen may use your data ("During its free period, collected data may be used to improve the model"), so read the Privacy section of that page before switching. This path is covered by tests against a local fake of the API; it has not been run against the live OpenCode service.
+| Provider | Default model | API used | Indexing |
+| --- | --- | --- | --- |
+| Gemini | `gemini-3.5-flash-lite` | Google Generative Language API | the same key, no daily limit |
+| OpenAI | `gpt-6-luna` | Chat Completions, streaming | Gemini (see below) |
+| Claude | `claude-sonnet-5-5` | Anthropic Messages API, streaming | Gemini (see below) |
+| OpenCode Zen | `deepseek-v4.1-flash` | `https://opencode.ai/zen/v1/chat/completions` | Gemini (see below) |
+
+Questions on a visitor's own key skip the daily question limit. Search vectors always come from Gemini, so a repo indexed once stays searchable for everyone: with an OpenAI, Claude or OpenCode key, indexing uses the visitor's optional Gemini key if they add one, otherwise the free server key (and counts toward the daily index limit). The panel says so.
+
+OpenCode Zen's free models do not work here: called from a server, Zen answers `403 FreeTierError` "OpenCode's free tier can only be used from within OpenCode", so a paid model is needed. Bad keys, an empty balance, a wrong model name and the Zen free-tier refusal each come back as one plain sentence.
+
+The keys stay in the visitor's browser (localStorage) and travel as headers on their own requests only (`X-Chat-Provider`, `X-Chat-Key`, `X-Chat-Model`, and `X-Gemini-Key` for a Gemini key). The server builds a model for that request and drops it. It never stores or logs the key; a test checks that no key reaches the database.
+
+The server itself can also run on OpenAI instead of Gemini (`AI_PROVIDER=openai`, `OPENAI_API_KEY`). Each provider keeps its own vector table because embedding sizes differ.
 
 ## Deploy for free
 
@@ -86,7 +99,7 @@ The same code runs on OpenAI (`AI_PROVIDER=openai`, `OPENAI_API_KEY`) or on a lo
 flowchart LR
   B[Browser<br/>Next.js] -- REST + SSE<br/>X-Visitor-Id --> API[Spring Boot API]
   API -- one zip per commit,<br/>compare for changes --> GH[GitHub API]
-  API -- embeddings + chat<br/>server key --> AI[Gemini / OpenAI / Ollama]
+  API -- embeddings + chat<br/>server key or visitor key --> AI[Gemini / OpenAI / Claude / OpenCode Zen]
   API -- chunks + vectors,<br/>repos, chats, usage --> PG[(Postgres + pgvector)]
 ```
 
@@ -99,7 +112,7 @@ flowchart LR
 
 | Method | Endpoint | What it does |
 |---|---|---|
-| GET | `/api/usage` | Model in use and today's remaining free questions and index runs |
+| GET | `/api/usage` | Model in use, today's remaining free questions and index runs, and whether the visitor's own key is in use |
 | GET | `/api/repos` | This visitor's repos |
 | POST | `/api/repos/by-url` | Add a public repo `{owner, name}` |
 | POST | `/api/repos/{id}/index` | Start (or re-run) indexing, 202 |
@@ -109,7 +122,7 @@ flowchart LR
 | GET | `/api/chat/sessions/{id}` | Chat history |
 | POST | `/api/chat/sessions/{id}/messages` | Ask; answer streams as SSE (`token`, `assistant_message`, `done`, `error`) |
 
-Every call carries `X-Visitor-Id`, the anonymous browser id. It is not a login.
+Every call carries `X-Visitor-Id`, the anonymous browser id. It is not a login. Calls may also carry `X-Chat-Provider`, `X-Chat-Key`, `X-Chat-Model` and `X-Gemini-Key` when the visitor chose to use their own key.
 
 ## Tests
 

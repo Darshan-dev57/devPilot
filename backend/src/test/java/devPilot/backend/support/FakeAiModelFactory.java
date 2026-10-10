@@ -38,6 +38,9 @@ public class FakeAiModelFactory extends AiModelFactory {
     /** When set, new embedding calls fail the way a revoked server key does. */
     public final AtomicBoolean rejectKey = new AtomicBoolean();
 
+    /** provider:key of every chat model built, to check which key answered. */
+    public final List<String> chatKeys = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public FakeAiModelFactory(JdbcTemplate jdbcTemplate, RestClient.Builder builder) {
         super(jdbcTemplate, builder);
     }
@@ -54,6 +57,7 @@ public class FakeAiModelFactory extends AiModelFactory {
 
     @Override
     protected ChatModel buildChatModel(AiProvider provider, String apiKey) {
+        chatKeys.add(provider + ":" + apiKey);
         return new ChatModel() {
             @Override
             public ChatResponse call(Prompt prompt) {

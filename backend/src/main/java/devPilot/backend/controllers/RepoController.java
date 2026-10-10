@@ -23,6 +23,9 @@ import devPilot.backend.services.RepoService;
 import devPilot.backend.services.Visitors;
 import devPilot.backend.services.indexing.IndexingService;
 import devPilot.backend.services.limits.UsageLimiter;
+import devPilot.backend.services.ai.AiKeyResolver;
+import devPilot.backend.services.ai.AiKeyResolver.UserAiKey;
+import devPilot.backend.services.ai.VisitorKeys;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -38,6 +41,7 @@ public class RepoController {
     private final RepoService repoService;
     private final IndexingService indexingService;
     private final UsageLimiter usageLimiter;
+    private final AiKeyResolver aiKeyResolver;
 
     @GetMapping
     public List<RepositoryResponse> list(@RequestHeader(Visitors.HEADER) String visitor) {
@@ -67,22 +71,29 @@ public class RepoController {
     @PostMapping("/{id}/index")
     public ResponseEntity<RepositoryResponse> index(
             @PathVariable UUID id,
-            @RequestHeader(Visitors.HEADER) String visitor) {
+            @RequestHeader(Visitors.HEADER) String visitor,
+            @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey) {
         UUID visitorId = Visitors.parse(visitor);
         Repository current = repoService.requireVisible(id, visitorId);
         // Repos are shared. If someone else is already indexing this one, just follow along.
         if (current.getIndexStatus() == IndexStatus.INDEXING) {
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(current));
         }
-        usageLimiter.consume(visitorId, UsageLimiter.Kind.INDEX);
+        UserAiKey key = aiKeyResolver.embeddingKey(VisitorKeys.geminiOnly(geminiKey));
+        boolean free = !key.visitor();
+        if (free) {
+            usageLimiter.consume(visitorId, UsageLimiter.Kind.INDEX);
+        }
         Repository repo;
         try {
-            repo = indexingService.startIndexing(id);
+            repo = indexingService.startIndexing(id, key);
         } catch (RuntimeException ex) {
-            usageLimiter.refund(visitorId, UsageLimiter.Kind.INDEX);
+            if (free) {
+                usageLimiter.refund(visitorId, UsageLimiter.Kind.INDEX);
+            }
             throw ex;
         }
-        indexingService.indexAsync(id);
+        indexingService.indexAsync(id, key);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
@@ -97,10 +108,12 @@ public class RepoController {
     @PostMapping("/{id}/resume-index")
     public ResponseEntity<RepositoryResponse> resumeIndex(
             @PathVariable UUID id,
-            @RequestHeader(Visitors.HEADER) String visitor) {
+            @RequestHeader(Visitors.HEADER) String visitor,
+            @RequestHeader(name = VisitorKeys.GEMINI_HEADER, required = false) String geminiKey) {
         repoService.requireVisible(id, Visitors.parse(visitor));
-        Repository repo = indexingService.resumeIndexing(id);
-        indexingService.resumeAsync(id);
+        UserAiKey key = aiKeyResolver.embeddingKey(VisitorKeys.geminiOnly(geminiKey));
+        Repository repo = indexingService.resumeIndexing(id, key);
+        indexingService.resumeAsync(id, key);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(repoService.toResponse(repo));
     }
 
