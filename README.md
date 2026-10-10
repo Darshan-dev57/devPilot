@@ -71,6 +71,8 @@ DevPilot only indexes public repositories, and private repos are refused even if
 
 The same code runs on OpenAI (`AI_PROVIDER=openai`, `OPENAI_API_KEY`) or on a local Ollama (`AI_PROVIDER=ollama`). Each provider keeps its own vector table because embedding sizes differ.
 
+**OpenCode Zen for answers.** `AI_PROVIDER=opencode` with `OPENCODE_API_KEY` (sign in at opencode.ai) writes answers with an OpenCode Zen model over its OpenAI-compatible endpoint (`https://opencode.ai/zen/v1/chat/completions`, override with `OPENCODE_BASE_URL`). Zen has no embeddings endpoint, so indexing stays on Gemini (or on `AI_EMBEDDING_PROVIDER=ollama`). The default model is `longcat-2.5-preview-free`; set another with `OPENCODE_MODEL`. Zen's [docs](https://opencode.ai/docs/zen) say of it: "LongCat 2.5 Preview Free is free on OpenCode for a limited time. Its provider follows a zero-retention policy and does not use your data for model training." Because free models there are limited-time, DevPilot answers with Gemini instead if the OpenCode model fails before writing anything, and logs why. Other free models on Zen may use your data ("During its free period, collected data may be used to improve the model"), so read the Privacy section of that page before switching. This path is covered by tests against a local fake of the API; it has not been run against the live OpenCode service.
+
 ## Deploy for free
 
 - [docs/DEPLOY-FREE.md](docs/DEPLOY-FREE.md): Neon (database) + Render (backend) + Vercel (frontend), no card.

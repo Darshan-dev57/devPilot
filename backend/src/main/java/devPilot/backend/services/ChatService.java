@@ -104,6 +104,7 @@ public class ChatService {
             throw new BadRequestException("That question is too long. Keep it under " + MAX_QUESTION_CHARS + " characters.");
         }
         var userKey = aiKeyResolver.requireKey();
+        var chatKey = aiKeyResolver.requireChatKey();
         // Vectors from one provider's embedding model cannot be searched with another's.
         if (repo.getEmbeddingProvider() != null && !repo.getEmbeddingProvider().equals(userKey.provider().name())) {
             throw new BadRequestException("This repo was indexed with " + label(repo.getEmbeddingProvider())
@@ -135,8 +136,8 @@ public class ChatService {
         String userPrompt = chatPromptBuilder.userPrompt(retrievedContext.contextText(), history, userContent);
 
         return chatStreamHandler.stream(
-                aiModelFactory.chatModel(userKey.provider(), userKey.apiKey()),
-                userKey.provider(),
+                aiModelFactory.answerModel(chatKey, userKey),
+                chatKey.provider(),
                 session.getId(),
                 toMessageResponse(userMessage),
                 retrievedContext.citations(),

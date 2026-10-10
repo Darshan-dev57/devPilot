@@ -32,6 +32,11 @@ public final class AiErrors {
             }
             return "The free " + name + " quota is busy right now. Wait a minute and try again.";
         }
+        if (provider == AiProvider.OPENCODE && (eq(status, 404) || eq(status, 400) || eq(status, 402)
+                || lower.contains("model"))) {
+            return "The free OpenCode Zen model is no longer available (free models there are limited-time). "
+                    + "The site owner needs to pick another in OPENCODE_MODEL.";
+        }
         if (eq(status, 404) || lower.contains("model_not_found") || lower.contains("does not exist")
                 || lower.contains("not found")) {
             return "The configured " + name + " model is not available. The site owner needs to check the model name.";
