@@ -14,13 +14,19 @@ class AiErrorsTest {
     void badKeyIsNamedAsSuch() {
         var error = HttpClientErrorException.create(HttpStatus.UNAUTHORIZED, "Unauthorized", null,
                 "{\"error\":{\"code\":\"invalid_api_key\"}}".getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
-        assertThat(AiErrors.describe(error, AiProvider.OPENAI)).isEqualTo("Your OpenAI API key was rejected. Check it in Settings.");
+        assertThat(AiErrors.describe(error, AiProvider.OPENAI)).isEqualTo("The server's OpenAI key was rejected. The site owner needs to check it.");
     }
 
     @Test
     void quotaAndRateLimitsAreExplained() {
         assertThat(AiErrors.describe(new RuntimeException("RESOURCE_EXHAUSTED: quota"), AiProvider.GEMINI))
-                .startsWith("Your Gemini account hit its rate limit");
+                .isEqualTo("The free Gemini quota is busy right now. Wait a minute and try again.");
+        var daily = HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", null,
+                "{\"error\":{\"status\":\"RESOURCE_EXHAUSTED\",\"details\":[{\"quotaId\":\"GenerateRequestsPerDayPerProjectPerModel-FreeTier\"}]}}"
+                        .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        assertThat(AiErrors.isRateLimit(daily)).isTrue();
+        assertThat(AiErrors.describe(daily, AiProvider.GEMINI))
+                .isEqualTo("The free Gemini quota for today is used up. Please try again tomorrow.");
     }
 
     @Test
