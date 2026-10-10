@@ -1,90 +1,36 @@
-import type { SVGProps } from "react";
-
 import { cn } from "@/lib/utils";
 
-type DevPilotIconProps = SVGProps<SVGSVGElement> & {
-  variant?: "color" | "mono";
-};
-
-export function DevPilotIcon({
-  className,
-  variant = "color",
-  ...props
-}: DevPilotIconProps) {
-  const mono = variant === "mono";
-
+/**
+ * DevPilot mark: code brackets around a compass needle, for finding your way around a
+ * codebase. Drawn by hand on a 32px grid so it stays readable at 16px. The tile follows
+ * the theme (ink on paper, paper on ink); the needle tip is the one green accent.
+ */
+export function DevPilotIcon({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      className={cn("shrink-0", className)}
-      {...props}
-    >
-      <rect
-        width="64"
-        height="64"
-        rx="15"
-        fill={mono ? "currentColor" : "#0D9488"}
-      />
+    <svg viewBox="0 0 32 32" aria-hidden className={cn("size-7 shrink-0", className)}>
+      <rect width="32" height="32" rx="7.5" className="fill-foreground" />
       <path
-        d="M22 30l7 7-7 7"
-        stroke={mono ? "var(--background)" : "#FFFFFF"}
-        strokeWidth="3.25"
+        d="M10.4 9.6 5.6 16l4.8 6.4M21.6 9.6 26.4 16l-4.8 6.4"
+        fill="none"
+        strokeWidth="2.7"
         strokeLinecap="round"
         strokeLinejoin="round"
+        className="stroke-background"
       />
-      <path
-        d="M33 44h15"
-        stroke={mono ? "var(--background)" : "#FFFFFF"}
-        strokeWidth="3.25"
-        strokeLinecap="round"
-      />
-      <rect
-        x="47"
-        y="42.25"
-        width="3"
-        height="3.5"
-        rx="0.75"
-        fill={mono ? "var(--background)" : "#FFFFFF"}
-      />
+      <path d="M20.88 11.12 L17.66 17.66 L14.34 14.34 Z" className="fill-[#58c295]" />
+      <path d="M11.12 20.88 L17.66 17.66 L14.34 14.34 Z" className="fill-background" />
     </svg>
   );
 }
 
-export function DevPilotLogo({
-  className,
-  ...props
-}: SVGProps<SVGSVGElement>) {
+/** Mark plus wordmark, for the navbar and the landing page. */
+export function DevPilotLogo({ className, markClassName }: { className?: string; markClassName?: string }) {
   return (
-    <svg
-      viewBox="0 0 220 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      className={cn("shrink-0", className)}
-      {...props}
-    >
-      <rect width="64" height="64" rx="15" fill="#0D9488" />
-      <path
-        d="M22 30l7 7-7 7"
-        stroke="#FFFFFF"
-        strokeWidth="3.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M33 44h15"
-        stroke="#FFFFFF"
-        strokeWidth="3.25"
-        strokeLinecap="round"
-      />
-      <rect x="47" y="42.25" width="3" height="3.5" rx="0.75" fill="#FFFFFF" />
-      <path
-        fill="currentColor"
-        d="M80 44.5V19.5h8.4c5.2 0 8.6 2.7 8.6 7.2 0 3.1-1.6 5.4-4.2 6.4l5.1 11.4h-5.9l-4.6-10.4h-2.4v10.4H80zm5.2-14.6h2.8c2.5 0 3.9-1.2 3.9-3.3s-1.4-3.2-3.9-3.2h-2.8v6.5zM108.2 44.9c-6.1 0-10.1-4.2-10.1-10.6s4-10.6 10.1-10.6 10.1 4.2 10.1 10.6-4 10.6-10.1 10.6zm0-4.5c3.1 0 4.9-2.3 4.9-6.1s-1.8-6.1-4.9-6.1-4.9 2.3-4.9 6.1 1.8 6.1 4.9 6.1zM131.6 44.5V19.5h5.2v25h-5.2zM145.8 44.5l8.7-25h5.7l8.7 25h-5.6l-1.5-4.6h-9.1l-1.5 4.6h-5.4zm10.1-15.9-3.1 9.6h6.2l-3.1-9.6zM176.8 44.9c-6.1 0-10.1-4.2-10.1-10.6s4-10.6 10.1-10.6c3.6 0 6.4 1.5 7.9 4.1l-4.4 2.5c-.7-1.3-1.9-2-3.5-2-2.8 0-4.7 2.2-4.7 6s1.9 6 4.7 6c1.6 0 2.8-.7 3.5-2l4.4 2.5c-1.5 2.6-4.3 4.1-7.9 4.1zM199.8 44.5V19.5h8.4c5.2 0 8.6 2.7 8.6 7.2 0 3.1-1.6 5.4-4.2 6.4l5.1 11.4h-5.9l-4.6-10.4h-2.4v10.4h-5.2zm5.2-14.6h2.8c2.5 0 3.9-1.2 3.9-3.3s-1.4-3.2-3.9-3.2h-2.8v6.5z"
-      />
-    </svg>
+    <span className={cn("inline-flex items-center gap-2", className)}>
+      <DevPilotIcon className={markClassName} />
+      <span className="text-[15px] font-semibold tracking-tight">
+        Dev<span className="text-primary">Pilot</span>
+      </span>
+    </span>
   );
 }

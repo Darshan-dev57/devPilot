@@ -3,16 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { DevPilotLogo } from "@/components/icons/devpilot-icon";
 import { ModeToggle } from "@/components/ui/mode-toggle";
 import { cn } from "@/lib/utils";
 
 export function BrandMark({ className }: { className?: string }) {
   return (
-    <Link href="/" className={cn("group inline-flex items-center gap-2", className)}>
-      <span className="grid size-7 place-items-center rounded-md bg-foreground font-mono text-[13px] font-semibold text-background">
-        dp
-      </span>
-      <span className="text-[15px] font-semibold tracking-tight">DevPilot</span>
+    <Link href="/" aria-label="DevPilot home" className={cn("group inline-flex items-center", className)}>
+      <DevPilotLogo />
     </Link>
   );
 }
