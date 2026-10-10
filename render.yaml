@@ -38,11 +38,11 @@ services:
       - key: LIMIT_QUESTIONS_PER_VISITOR
         value: 30
       - key: LIMIT_INDEXES_PER_VISITOR
-        value: 5
+        value: 2
       - key: LIMIT_QUESTIONS_GLOBAL
         value: 1000
       - key: LIMIT_INDEXES_GLOBAL
-        value: 100
+        value: 5
       - key: APP_FRONTEND_URL
         sync: false
       - key: APP_CORS_ALLOWED_ORIGINS
