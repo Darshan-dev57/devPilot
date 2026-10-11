@@ -40,21 +40,23 @@ Paste a GitHub repository link and DevPilot indexes the code. Then ask questions
 
 ```mermaid
 flowchart TB
-  subgraph Indexing
+  subgraph Indexing["Indexing a repository"]
+    direction LR
     A["Repository URL"] --> B["GitHub API<br/>download code zip"]
     B --> C["Filter code files"]
     C --> D["Split into chunks<br/>at class and method boundaries"]
     D --> E["Gemini embeddings"]
-    E --> F[("PostgreSQL + pgvector")]
   end
-  subgraph Question
+  subgraph Question["Answering a question"]
+    direction LR
     Q["Question"] --> G["Embed question"]
     G --> H["Similarity search<br/>top matching chunks"]
-    F --> H
     H --> I["Prompt with code<br/>and chat history"]
     I --> J["Chat model"]
     J --> K["Answer streamed over SSE<br/>with file and line citations"]
   end
+  E --> F[("PostgreSQL + pgvector")]
+  F --> H
 ```
 
 1. **Indexing** runs in the background. The backend downloads the repository as a zip at its latest commit, keeps the code files, splits them at class and method boundaries, embeds each chunk and stores the vectors in pgvector.
