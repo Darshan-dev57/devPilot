@@ -55,8 +55,8 @@ flowchart TB
     I --> J["Chat model"]
     J --> K["Answer streamed over SSE<br/>with file and line citations"]
   end
-  E --> F[("PostgreSQL + pgvector")]
-  F --> H
+  Indexing -- "store vectors" --> F[("PostgreSQL + pgvector")]
+  F -- "search vectors" --> Question
 ```
 
 1. **Indexing** runs in the background. The backend downloads the repository as a zip at its latest commit, keeps the code files, splits them at class and method boundaries, embeds each chunk and stores the vectors in pgvector.
