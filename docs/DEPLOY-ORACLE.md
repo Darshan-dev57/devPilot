@@ -67,7 +67,7 @@ Edit `.env`:
 - `POSTGRES_PASSWORD=` — any strong password.
 - `GEMINI_API_KEY=` — one free key from https://aistudio.google.com/apikey.
   Visitors never paste a key; daily limits protect the free quota (README,
-  "Free tier and limits").
+  "Usage limits").
 - Optional: `GITHUB_TOKEN=` — a classic token with no scopes, to raise GitHub's
   limit from 60 to 5,000 calls an hour.
 

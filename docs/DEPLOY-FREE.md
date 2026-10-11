@@ -6,7 +6,7 @@ Vercel (frontend). Total cost: $0.
 
 ## Architecture
 
-No login and no key pasting. Visitors paste a GitHub repo link → the backend downloads it with an optional **server-side GitHub token** → index → chat. The AI calls use **one free Gemini key that you set on the server**; per-visitor daily limits keep the free quota from running out (README, "Free tier and limits").
+No login and no key pasting. Visitors paste a GitHub repo link → the backend downloads it with an optional **server-side GitHub token** → index → chat. The AI calls use **one free Gemini key that you set on the server**; per-visitor daily limits keep the free quota from running out (README, "Usage limits").
 
 ## Path A (recommended): Neon + Render + Vercel
 
@@ -36,7 +36,7 @@ Architecture: browser → Vercel (Next.js) → Render (Spring Boot API) → Neon
 
 1. Open https://aistudio.google.com/apikey with a Google account and create a key. No card needed.
 2. Copy it — you'll paste it into Render as `GEMINI_API_KEY`. Never commit it.
-3. Read the free-tier data terms in the README before you go public.
+3. Read Google's [Gemini API terms](https://ai.google.dev/gemini-api/terms) for unpaid services before you go public.
 
 ### 3. Backend — Render (10 min + first build)
 
