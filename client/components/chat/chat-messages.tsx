@@ -49,7 +49,7 @@ export function ChatMessages({
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-6 sm:py-10">
         {messages.length === 0 && !streamText && !streaming && (
           <div className="py-6 sm:py-12">
-            <p className="font-[family-name:var(--font-display)] text-3xl leading-tight sm:text-4xl">
+            <p className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
               What do you want to know about <span className="italic text-primary">{repo.name}</span>?
             </p>
             <p className="mt-3 text-sm text-muted-foreground">

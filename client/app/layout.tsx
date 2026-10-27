@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
@@ -8,12 +8,6 @@ import { Toaster } from "@/components/ui/toast";
 
 const sans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
 const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
-const display = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-display",
-});
 
 export const metadata: Metadata = {
   title: "DevPilot: chat with any GitHub repo",
@@ -26,7 +20,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fbfaf7" },
+    { media: "(prefers-color-scheme: light)", color: "#fafaf9" },
     { media: "(prefers-color-scheme: dark)", color: "#1b1916" },
   ],
 };
@@ -39,8 +33,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full antialiased", sans.variable, mono.variable, display.variable)}
-      style={{ ["--font-heading" as string]: "var(--font-geist-sans)" }}
+      className={cn("h-full antialiased", sans.variable, mono.variable)}
+      style={{ ["--font-heading" as string]: "var(--font-geist-sans)", ["--font-display" as string]: "var(--font-geist-sans)" }}
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col">

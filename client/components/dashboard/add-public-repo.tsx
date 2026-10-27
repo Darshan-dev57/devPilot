@@ -61,10 +61,10 @@ export function AddPublicRepo({ variant = "inline" }: { variant?: "inline" | "he
         }}
         className={cn(
           "flex items-center gap-2 rounded-xl border bg-card p-1.5 shadow-[0_1px_0_0_var(--border)] transition-colors focus-within:border-ring",
-          hero && "p-2 shadow-[0_8px_30px_-12px_oklch(0.3_0.02_70/0.25)]"
+          hero && "rounded-2xl border-2 border-transparent bg-[var(--field,var(--secondary))] p-2 shadow-none focus-within:border-ring"
         )}
       >
-        <span className="hidden pl-2 font-mono text-sm text-muted-foreground sm:inline">github.com/</span>
+        <code className={cn("hidden pl-2 text-muted-foreground sm:inline", hero ? "text-[15px]" : "text-sm")}>github.com/</code>
         <input
           value={value}
           onChange={(e) => {
@@ -76,12 +76,18 @@ export function AddPublicRepo({ variant = "inline" }: { variant?: "inline" | "he
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent px-2 py-2 font-mono text-sm outline-none placeholder:font-sans placeholder:text-muted-foreground sm:px-0"
+          className={cn(
+            "min-w-0 flex-1 bg-transparent px-2 py-2 font-mono outline-none placeholder:font-sans placeholder:text-muted-foreground sm:px-0",
+            hero ? "text-base" : "text-sm"
+          )}
         />
         <button
           type="submit"
           disabled={addMutation.isPending || value.trim().length === 0}
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 bg-primary font-medium text-primary-foreground transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] disabled:opacity-50",
+            hero ? "h-11 rounded-xl px-4 text-[15px]" : "h-9 rounded-lg px-3.5 text-sm"
+          )}
         >
           {addMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           Add repo
@@ -93,7 +99,7 @@ export function AddPublicRepo({ variant = "inline" }: { variant?: "inline" | "he
           {error}
         </p>
       ) : (
-        <div className="mt-3 flex flex-wrap items-center gap-2 px-1 text-xs text-muted-foreground">
+        <div className={cn("mt-3 flex flex-wrap items-center gap-2 px-1 text-muted-foreground", hero ? "text-sm" : "text-xs")}>
           <span>Try</span>
           {EXAMPLES.map((example) => (
             <button
@@ -103,9 +109,12 @@ export function AddPublicRepo({ variant = "inline" }: { variant?: "inline" | "he
                 setValue(example);
                 submit(example);
               }}
-              className="rounded-md border border-dashed px-2 py-1 font-mono text-[11px] text-foreground/80 hover:border-solid hover:text-foreground"
+              className={cn(
+                "rounded-md bg-secondary px-2 py-1 text-foreground/85 transition-colors hover:bg-accent hover:text-accent-foreground",
+                hero ? "text-[13px]" : "text-[11px]"
+              )}
             >
-              {example}
+              <code>{example}</code>
             </button>
           ))}
         </div>
